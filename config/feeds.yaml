@@ -1,19 +1,19 @@
 feeds:
   # High-value business/investment podcasts
   - name: "Lenny's Podcast"
-    url: "https://feeds.simplecast.com/UZ12E8Qw"
+    url: "https://api.substack.com/feed/podcast/10845.rss"
     category: "product"
   
   - name: "Acquired"
-    url: "https://feeds.simplecast.com/kANlq7Qa"
+    url: "https://feeds.transistor.fm/acquired"
     category: "business"
     
   - name: "Invest Like the Best"
-    url: "https://feeds.simplecast.com/1T87WVeA"
+    url: "https://feeds.megaphone.fm/investlikethebest"
     category: "investing"
     
   - name: "The Twenty Minute VC"
-    url: "https://feeds.simplecast.com/6ea96d8b"
+    url: "https://thetwentyminutevc.libsyn.com/rss"
     category: "venture"
     
   - name: "a16z Podcast"
