@@ -1,13 +1,12 @@
 """
-Open Podcast Processor - Streamlit Home Page
-Automated podcast processing with XAI API
+Open Podcast Processor - Home Page
+Streamlit application for automated podcast processing with XAI API
 """
 
 import streamlit as st
 import os
-from pathlib import Path
+from p3.database import P3Database
 
-# Page configuration
 st.set_page_config(
     page_title="Open Podcast Processor",
     page_icon="🎙️",
@@ -15,136 +14,177 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS
+# Custom CSS for better UI
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 3rem;
+    .big-number {
+        font-size: 48px;
         font-weight: bold;
         color: #1f77b4;
-        text-align: center;
-        margin-bottom: 1rem;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #666;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .feature-box {
+    .workflow-step {
+        padding: 20px;
+        border-radius: 10px;
         background-color: #f0f2f6;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
+        margin: 10px 0;
     }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
+    .step-number {
+        font-size: 32px;
+        font-weight: bold;
+        color: #ff4b4b;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown('<div class="main-header">🎙️ Open Podcast Processor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Automated podcast processing with XAI API</div>', unsafe_allow_html=True)
+st.title("🎙️ Open Podcast Processor")
+st.markdown("**Automated podcast processing with XAI API**")
 
 # Check API key
 api_key = os.getenv("XAI_API_KEY")
-if not api_key:
-    st.error("⚠️ XAI_API_KEY not found in environment variables. Please set it to use the application.")
-    st.info("You can set it by running: `export XAI_API_KEY=your_api_key_here`")
-else:
+if api_key:
     st.success("✅ XAI API Key configured")
+else:
+    st.error("⚠️ XAI_API_KEY not found. Please set it in your environment variables.")
+    st.code("export XAI_API_KEY='your-key-here'")
+    st.stop()
 
-# Main content
+# Initialize database
+db = P3Database()
+
+# Get statistics
+downloaded = db.get_episodes_by_status('downloaded')
+transcribed = db.get_episodes_by_status('transcribed')
+processed = db.get_episodes_by_status('processed')
+
+total_episodes = len(downloaded) + len(transcribed) + len(processed)
+
+# Quick Stats at the top
+st.markdown("### 📊 Quick Stats")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    st.metric("📥 Downloaded", len(downloaded), help="Episodes downloaded but not transcribed")
+with col2:
+    st.metric("🎯 Transcribed", len(transcribed), help="Episodes transcribed but not summarized")
+with col3:
+    st.metric("✅ Processed", len(processed), help="Episodes fully processed")
+with col4:
+    st.metric("📊 Total", total_episodes, help="All episodes in database")
+
+st.markdown("---")
+
+# Workflow Guide
+st.markdown("## 🚀 Getting Started - 3 Easy Steps")
+
+# Step 1: Download
+st.markdown("""
+<div class="workflow-step">
+    <span class="step-number">1️⃣</span> <strong>Download Episodes</strong>
+    <p>Go to <strong>📥 Download</strong> page → Select feeds → Click "Download Episodes"</p>
+</div>
+""", unsafe_allow_html=True)
+
+if len(downloaded) > 0:
+    st.info(f"✅ You have {len(downloaded)} episodes ready to transcribe!")
+    if st.button("🎯 Go to Process Episodes →", type="primary"):
+        st.switch_page("pages/1_Process.py")
+else:
+    st.warning("⚠️ No episodes downloaded yet. Start by downloading some episodes!")
+    if st.button("📥 Go to Download →", type="primary"):
+        st.switch_page("pages/0_Download.py")
+
+# Step 2: Process
+st.markdown("""
+<div class="workflow-step">
+    <span class="step-number">2️⃣</span> <strong>Process Episodes</strong>
+    <p>Go to <strong>⚙️ Process</strong> page → Click "Process All" to transcribe and summarize</p>
+</div>
+""", unsafe_allow_html=True)
+
+if len(transcribed) > 0:
+    st.info(f"✅ You have {len(transcribed)} episodes ready to summarize!")
+
+# Step 3: View Results
+st.markdown("""
+<div class="workflow-step">
+    <span class="step-number">3️⃣</span> <strong>View Results</strong>
+    <p>Go to <strong>📊 View Data</strong> page → Browse summaries, transcripts, and export data</p>
+</div>
+""", unsafe_allow_html=True)
+
+if len(processed) > 0:
+    st.success(f"✅ You have {len(processed)} fully processed episodes!")
+    if st.button("📊 View Results →"):
+        st.switch_page("pages/2_View_Data.py")
+
+st.markdown("---")
+
+# Pipeline Overview
+st.markdown("### 🔄 Processing Pipeline")
+
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("### 🚀 Key Features")
     st.markdown("""
-    <div class="feature-box">
-    <ul>
-        <li><b>🎧 Smart RSS Feed Management</b> - Monitor and download podcast episodes</li>
-        <li><b>🚀 XAI-Powered Transcription</b> - Fast and accurate speech-to-text</li>
-        <li><b>🧠 AI Summarization</b> - Extract topics, themes, quotes, and companies</li>
-        <li><b>💾 DuckDB Storage</b> - Efficient data storage and querying</li>
-        <li><b>📊 Interactive Viewing</b> - Browse and explore processed content</li>
-    </ul>
-    </div>
-    """, unsafe_allow_html=True)
+    **Pipeline Steps:**
+    1. 📥 **Download** → Fetch episodes from RSS feeds
+    2. 🎯 **Transcribe** → Convert audio to text (XAI Whisper)
+    3. 🧠 **Summarize** → Extract insights (XAI Grok)
+    4. 💾 **Store** → Save to DuckDB
+    5. 📄 **Export** → View and download results
+    """)
 
 with col2:
-    st.markdown("### 📊 Pipeline Overview")
     st.markdown("""
-    <div class="feature-box">
-    <b>Processing Pipeline:</b>
-    <ol>
-        <li>📥 <b>RSS Feed</b> → Download episodes from configured feeds</li>
-        <li>🎵 <b>Audio Processing</b> → ffmpeg normalization</li>
-        <li>🎯 <b>XAI Transcription</b> → Convert speech to text</li>
-        <li>🧠 <b>XAI Summarization</b> → Extract structured insights</li>
-        <li>💾 <b>DuckDB Storage</b> → Store and query results</li>
-        <li>📄 <b>Export/View</b> → Access via Streamlit interface</li>
-    </ol>
-    </div>
-    """, unsafe_allow_html=True)
+    **Features:**
+    - 🎧 Smart RSS feed management
+    - 🚀 XAI-powered transcription
+    - 🧠 AI summarization with topics & quotes
+    - 💾 Efficient DuckDB storage
+    - 📊 Interactive data viewing
+    """)
 
-# Quick stats
-st.markdown("### 📈 Quick Stats")
-
-# Initialize database to get stats
-try:
-    from p3.database import P3Database
-    db = P3Database()
+# Progress visualization
+if total_episodes > 0:
+    st.markdown("### 📈 Processing Progress")
     
-    # Get episode counts by status
-    downloaded = len(db.get_episodes_by_status('downloaded'))
-    transcribed = len(db.get_episodes_by_status('transcribed'))
-    processed = len(db.get_episodes_by_status('processed'))
+    downloaded_pct = (len(downloaded) / total_episodes) * 100
+    transcribed_pct = (len(transcribed) / total_episodes) * 100
+    processed_pct = (len(processed) / total_episodes) * 100
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("📥 Downloaded", downloaded)
-    with col2:
-        st.metric("🎯 Transcribed", transcribed)
-    with col3:
-        st.metric("✅ Processed", processed)
-    with col4:
-        total = downloaded + transcribed + processed
-        st.metric("📊 Total Episodes", total)
+        st.progress(downloaded_pct / 100)
+        st.caption(f"Downloaded: {downloaded_pct:.0f}%")
     
-    db.close()
-except Exception as e:
-    st.info("💡 No database found yet. Start by configuring RSS feeds and downloading episodes!")
+    with col2:
+        st.progress(transcribed_pct / 100)
+        st.caption(f"Transcribed: {transcribed_pct:.0f}%")
+    
+    with col3:
+        st.progress(processed_pct / 100)
+        st.caption(f"Processed: {processed_pct:.0f}%")
 
-# Getting Started
-st.markdown("### 🎯 Getting Started")
-st.markdown("""
-1. **Configure Feeds** - Go to the RSS Feeds page to add podcast feeds
-2. **Download Episodes** - Fetch episodes from your configured feeds
-3. **Process Audio** - Transcribe and summarize episodes using XAI
-4. **View Results** - Browse processed content and export digests
-""")
+# Cleanup
+db.close()
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 📚 Navigation")
-    st.markdown("""
-    - **🏠 Home** - Overview and stats
-    - **📡 RSS Feeds** - Manage podcast feeds
-    - **⚙️ Processing** - Transcribe and summarize
-    - **📊 View Data** - Browse processed content
-    """)
+    st.markdown("### 🎙️ Open Podcast Processor")
+    st.markdown("---")
+    
+    st.markdown("### 📚 Quick Links")
+    st.page_link("pages/0_Download.py", label="📥 Download Episodes", icon="📥")
+    st.page_link("pages/1_Process.py", label="⚙️ Process Episodes", icon="⚙️")
+    st.page_link("pages/2_View_Data.py", label="📊 View Data", icon="📊")
     
     st.markdown("---")
+    
     st.markdown("### ℹ️ About")
     st.markdown("""
-    **Open Podcast Processor** is an automated podcast processing system that uses XAI API 
-    for transcription and summarization.
+    **Open Podcast Processor** automates podcast processing using XAI API.
     
     Built with:
     - Streamlit
@@ -154,8 +194,10 @@ with st.sidebar:
     """)
     
     st.markdown("---")
+    
     st.markdown("### 🙏 Acknowledgements")
     st.markdown("""
-    Inspired by [Parakeet Podcast Processor](https://github.com/haasonsaas/parakeet-podcast-processor) 
-    and the innovative work of [Tomasz Tunguz](https://tomtunguz.com).
+    Inspired by:
+    - [Parakeet Podcast Processor](https://github.com/haasonsaas/parakeet-podcast-processor)
+    - [Tomasz Tunguz](https://tomtunguz.com/)
     """)

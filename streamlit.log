@@ -1,0 +1,30 @@
+nohup: ignoring input
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://169.254.0.21:8501
+  External URL: http://3.87.59.51:8501
+
+2025-11-27 13:54:42.017 Uncaught app execution
+Traceback (most recent call last):
+  File "/home/ubuntu/streamlit-podcast-processor/venv/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 129, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+  File "/home/ubuntu/streamlit-podcast-processor/venv/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 667, in code_to_exec
+    _mpa_v1(self._main_script_path)
+  File "/home/ubuntu/streamlit-podcast-processor/venv/lib/python3.11/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 165, in _mpa_v1
+    page.run()
+  File "/home/ubuntu/streamlit-podcast-processor/venv/lib/python3.11/site-packages/streamlit/navigation/page.py", line 303, in run
+    exec(code, module.__dict__)  # noqa: S102
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/streamlit-podcast-processor/pages/0_Download.py", line 158, in <module>
+    downloaded = len(db.get_episodes_by_status('downloaded'))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/ubuntu/streamlit-podcast-processor/p3/database.py", line 126, in get_episodes_by_status
+    results = self.conn.execute("""
+              ^^^^^^^^^^^^^^^^^^^^^
+_duckdb.ConnectionException: Connection Error: Connection already closed!
