@@ -96,16 +96,21 @@ if selected_feeds:
                 
                 with st.spinner(f"📥 Downloading from {feed['name']}..."):
                     try:
-                        count = downloader.download_from_feed(
-                            feed['url'],
+                        # Add feed to database
+                        podcast_id = downloader.add_feed(
                             feed['name'],
-                            feed.get('category', 'general'),
-                            max_episodes=max_episodes
+                            feed['url'],
+                            feed.get('category', 'general')
                         )
+                        
+                        # Process feed and download episodes
+                        count = downloader.process_feed(feed['url'])
                         total_downloaded += count
                         st.success(f"✅ {feed['name']}: Downloaded {count} episodes")
                     except Exception as e:
                         st.error(f"❌ {feed['name']}: {str(e)}")
+                        import traceback
+                        st.error(traceback.format_exc())
                 
                 progress_bar.progress((idx + 1) / total_feeds)
         
