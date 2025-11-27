@@ -80,7 +80,7 @@ if selected_feeds:
         progress_bar = st.progress(0)
         status_container = st.container()
         
-        downloader = PodcastDownloader(db, data_dir="data")
+        downloader = PodcastDownloader(db, data_dir="data", max_episodes=max_episodes)
         
         total_feeds = len(selected_feeds)
         total_downloaded = 0
@@ -103,10 +103,18 @@ if selected_feeds:
                             feed.get('category', 'general')
                         )
                         
+                        # Fetch episodes first to show what we found
+                        episodes = downloader.fetch_episodes(feed['url'], limit=max_episodes)
+                        st.info(f"🔍 Found {len(episodes)} episodes in feed")
+                        
                         # Process feed and download episodes
                         count = downloader.process_feed(feed['url'])
                         total_downloaded += count
-                        st.success(f"✅ {feed['name']}: Downloaded {count} episodes")
+                        
+                        if count > 0:
+                            st.success(f"✅ {feed['name']}: Downloaded {count} new episodes")
+                        else:
+                            st.warning(f"⚠️ {feed['name']}: Found {len(episodes)} episodes but downloaded 0 (may already exist in database)")
                     except Exception as e:
                         st.error(f"❌ {feed['name']}: {str(e)}")
                         import traceback
