@@ -1,6 +1,6 @@
 {
   "test_name": "database_test",
-  "timestamp": "2025-11-27T13:28:33.842076",
+  "timestamp": "2025-11-27T13:48:41.058638",
   "tests": [
     {
       "name": "database_initialization",
@@ -9,9 +9,8 @@
     },
     {
       "name": "add_podcast",
-      "status": "passed",
-      "message": "Podcast added with ID: 1",
-      "podcast_id": 1
+      "status": "failed",
+      "message": "Failed to add podcast: Constraint Error: Duplicate key \"rss_url: https://example.com/feed.xml\" violates unique constraint."
     },
     {
       "name": "get_podcast_by_url",
@@ -27,9 +26,8 @@
     },
     {
       "name": "add_episode",
-      "status": "passed",
-      "message": "Episode added with ID: 1",
-      "episode_id": 1
+      "status": "failed",
+      "message": "Failed to add episode: Constraint Error: Duplicate key \"url: https://example.com/episode1.mp3\" violates unique constraint."
     },
     {
       "name": "episode_exists",
@@ -44,8 +42,8 @@
   ],
   "summary": {
     "total": 6,
-    "passed": 6,
-    "failed": 0,
-    "success_rate": "100.0%"
+    "passed": 4,
+    "failed": 2,
+    "success_rate": "66.7%"
   }
 }

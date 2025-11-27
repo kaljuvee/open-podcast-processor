@@ -1,10 +1,10 @@
 {
   "test_suite": "open_podcast_processor",
-  "timestamp": "2025-11-27T13:28:33.842057",
+  "timestamp": "2025-11-27T13:48:41.058611",
   "test_modules": [
     {
       "test_name": "database_test",
-      "timestamp": "2025-11-27T13:28:33.842076",
+      "timestamp": "2025-11-27T13:48:41.058638",
       "tests": [
         {
           "name": "database_initialization",
@@ -13,9 +13,8 @@
         },
         {
           "name": "add_podcast",
-          "status": "passed",
-          "message": "Podcast added with ID: 1",
-          "podcast_id": 1
+          "status": "failed",
+          "message": "Failed to add podcast: Constraint Error: Duplicate key \"rss_url: https://example.com/feed.xml\" violates unique constraint."
         },
         {
           "name": "get_podcast_by_url",
@@ -31,9 +30,8 @@
         },
         {
           "name": "add_episode",
-          "status": "passed",
-          "message": "Episode added with ID: 1",
-          "episode_id": 1
+          "status": "failed",
+          "message": "Failed to add episode: Constraint Error: Duplicate key \"url: https://example.com/episode1.mp3\" violates unique constraint."
         },
         {
           "name": "episode_exists",
@@ -48,53 +46,53 @@
       ],
       "summary": {
         "total": 6,
-        "passed": 6,
-        "failed": 0,
-        "success_rate": "100.0%"
+        "passed": 4,
+        "failed": 2,
+        "success_rate": "66.7%"
       }
     },
     {
       "test_name": "downloader_test",
-      "timestamp": "2025-11-27T13:28:34.240488",
+      "timestamp": "2025-11-27T13:48:41.425563",
       "tests": [
         {
           "name": "downloader_initialization",
-          "status": "failed",
-          "message": "Failed to initialize downloader: PodcastDownloader.__init__() got an unexpected keyword argument 'download_dir'"
+          "status": "passed",
+          "message": "Downloader initialized successfully"
         },
         {
           "name": "parse_rss_feed",
           "status": "failed",
-          "message": "Failed to parse feed: cannot access local variable 'downloader' where it is not associated with a value"
+          "message": "Failed to parse feed: cannot access local variable 'feedparser' where it is not associated with a value"
         },
         {
           "name": "extract_episode_info",
-          "status": "failed",
-          "message": "Failed to extract episode info: cannot access local variable 'feed' where it is not associated with a value"
+          "status": "skipped",
+          "message": "No feed entries available"
         },
         {
           "name": "download_directory_creation",
           "status": "passed",
-          "message": "Download directory created: data/test_audio"
+          "message": "Download directory exists: data/test_audio"
         }
       ],
       "summary": {
         "total": 4,
-        "passed": 1,
-        "failed": 3,
-        "skipped": 0,
-        "success_rate": "25.0%"
+        "passed": 2,
+        "failed": 1,
+        "skipped": 1,
+        "success_rate": "50.0%"
       }
     },
     {
       "test_name": "xai_integration_test",
-      "timestamp": "2025-11-27T13:28:34.263392",
+      "timestamp": "2025-11-27T13:48:41.521040",
       "tests": [
         {
           "name": "xai_api_key_check",
           "status": "passed",
           "message": "XAI_API_KEY found in environment",
-          "key_prefix": "xai-EceMgm..."
+          "key_prefix": "xai-5Lw0Ie..."
         },
         {
           "name": "transcriber_initialization",
@@ -134,9 +132,9 @@
   ],
   "overall_summary": {
     "total_tests": 15,
-    "total_passed": 12,
+    "total_passed": 11,
     "total_failed": 3,
-    "total_skipped": 0,
-    "overall_success_rate": "80.0%"
+    "total_skipped": 1,
+    "overall_success_rate": "73.3%"
   }
 }

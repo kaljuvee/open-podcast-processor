@@ -1,12 +1,12 @@
 {
   "test_name": "xai_integration_test",
-  "timestamp": "2025-11-27T13:28:34.263392",
+  "timestamp": "2025-11-27T13:48:41.521040",
   "tests": [
     {
       "name": "xai_api_key_check",
       "status": "passed",
       "message": "XAI_API_KEY found in environment",
-      "key_prefix": "xai-EceMgm..."
+      "key_prefix": "xai-5Lw0Ie..."
     },
     {
       "name": "transcriber_initialization",
