@@ -49,8 +49,11 @@ digest_*.json
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/
+# Environment variables
+.env
+
+# Streamlit secrets (but keep config.toml)
+.streamlit/secrets.toml
 
 # Test results (keep structure but not actual results)
 test-results/*.json

@@ -273,6 +273,7 @@ Tomasz Tunguz pioneered many of the techniques for automated podcast analysis in
 All additional documentation is in the `docs/` directory:
 
 - **[docs/QUICKSTART.md](docs/QUICKSTART.md)** - 5-minute setup guide
+- **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** - Deploy to Streamlit Cloud
 - **[docs/CHANGELOG.md](docs/CHANGELOG.md)** - Version history and updates
 - **[docs/TEST_REPORT.md](docs/TEST_REPORT.md)** - Comprehensive test results
 - **[docs/README_ORIGINAL.md](docs/README_ORIGINAL.md)** - Original Parakeet README

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any
 from openai import OpenAI
 
 from .database import P3Database
+from .config import get_api_key
 
 
 class TranscriptCleaner:
@@ -16,15 +17,12 @@ class TranscriptCleaner:
         
         Args:
             db: Database instance
-            api_key: XAI API key (defaults to XAI_API_KEY env var)
+            api_key: XAI API key (defaults to environment/secrets)
             model: XAI model to use (default: grok-beta)
         """
         self.db = db
-        self.api_key = api_key or os.getenv("XAI_API_KEY")
+        self.api_key = api_key or get_api_key()
         self.model = model
-        
-        if not self.api_key:
-            raise ValueError("XAI_API_KEY must be provided or set in environment")
         
         # Initialize OpenAI client with XAI base URL
         self.client = OpenAI(
