@@ -1,0 +1,33 @@
+{
+  "test_name": "downloader_test",
+  "timestamp": "2025-11-27T13:28:34.240488",
+  "tests": [
+    {
+      "name": "downloader_initialization",
+      "status": "failed",
+      "message": "Failed to initialize downloader: PodcastDownloader.__init__() got an unexpected keyword argument 'download_dir'"
+    },
+    {
+      "name": "parse_rss_feed",
+      "status": "failed",
+      "message": "Failed to parse feed: cannot access local variable 'downloader' where it is not associated with a value"
+    },
+    {
+      "name": "extract_episode_info",
+      "status": "failed",
+      "message": "Failed to extract episode info: cannot access local variable 'feed' where it is not associated with a value"
+    },
+    {
+      "name": "download_directory_creation",
+      "status": "passed",
+      "message": "Download directory created: data/test_audio"
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 1,
+    "failed": 3,
+    "skipped": 0,
+    "success_rate": "25.0%"
+  }
+}

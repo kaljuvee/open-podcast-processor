@@ -1,0 +1,142 @@
+{
+  "test_suite": "open_podcast_processor",
+  "timestamp": "2025-11-27T13:28:33.842057",
+  "test_modules": [
+    {
+      "test_name": "database_test",
+      "timestamp": "2025-11-27T13:28:33.842076",
+      "tests": [
+        {
+          "name": "database_initialization",
+          "status": "passed",
+          "message": "Database initialized successfully"
+        },
+        {
+          "name": "add_podcast",
+          "status": "passed",
+          "message": "Podcast added with ID: 1",
+          "podcast_id": 1
+        },
+        {
+          "name": "get_podcast_by_url",
+          "status": "passed",
+          "message": "Podcast retrieved successfully",
+          "podcast_data": {
+            "id": 1,
+            "title": "Test Podcast",
+            "rss_url": "https://example.com/feed.xml",
+            "category": "tech",
+            "created_at": "2025-11-27 13:28:34.213200"
+          }
+        },
+        {
+          "name": "add_episode",
+          "status": "passed",
+          "message": "Episode added with ID: 1",
+          "episode_id": 1
+        },
+        {
+          "name": "episode_exists",
+          "status": "passed",
+          "message": "Episode existence check works"
+        },
+        {
+          "name": "update_episode_status",
+          "status": "passed",
+          "message": "Episode status updated successfully"
+        }
+      ],
+      "summary": {
+        "total": 6,
+        "passed": 6,
+        "failed": 0,
+        "success_rate": "100.0%"
+      }
+    },
+    {
+      "test_name": "downloader_test",
+      "timestamp": "2025-11-27T13:28:34.240488",
+      "tests": [
+        {
+          "name": "downloader_initialization",
+          "status": "failed",
+          "message": "Failed to initialize downloader: PodcastDownloader.__init__() got an unexpected keyword argument 'download_dir'"
+        },
+        {
+          "name": "parse_rss_feed",
+          "status": "failed",
+          "message": "Failed to parse feed: cannot access local variable 'downloader' where it is not associated with a value"
+        },
+        {
+          "name": "extract_episode_info",
+          "status": "failed",
+          "message": "Failed to extract episode info: cannot access local variable 'feed' where it is not associated with a value"
+        },
+        {
+          "name": "download_directory_creation",
+          "status": "passed",
+          "message": "Download directory created: data/test_audio"
+        }
+      ],
+      "summary": {
+        "total": 4,
+        "passed": 1,
+        "failed": 3,
+        "skipped": 0,
+        "success_rate": "25.0%"
+      }
+    },
+    {
+      "test_name": "xai_integration_test",
+      "timestamp": "2025-11-27T13:28:34.263392",
+      "tests": [
+        {
+          "name": "xai_api_key_check",
+          "status": "passed",
+          "message": "XAI_API_KEY found in environment",
+          "key_prefix": "xai-EceMgm..."
+        },
+        {
+          "name": "transcriber_initialization",
+          "status": "passed",
+          "message": "XAI transcriber initialized successfully"
+        },
+        {
+          "name": "cleaner_initialization",
+          "status": "passed",
+          "message": "XAI cleaner initialized successfully"
+        },
+        {
+          "name": "openai_client_configuration",
+          "status": "passed",
+          "message": "OpenAI client configured with XAI base URL",
+          "base_url": "https://api.x.ai/v1"
+        },
+        {
+          "name": "basic_extraction_fallback",
+          "status": "passed",
+          "message": "Basic extraction fallback works",
+          "extracted_topics": [
+            "transcript",
+            "about",
+            "artificial"
+          ]
+        }
+      ],
+      "summary": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "success_rate": "100.0%"
+      }
+    }
+  ],
+  "overall_summary": {
+    "total_tests": 15,
+    "total_passed": 12,
+    "total_failed": 3,
+    "total_skipped": 0,
+    "overall_success_rate": "80.0%"
+  }
+}
