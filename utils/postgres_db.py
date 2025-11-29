@@ -119,8 +119,62 @@ class PostgresDB:
                 if self.schema != 'public':
                     cursor.execute(f"SET search_path TO {self.schema}, public")
                 
-                # Execute the entire SQL file - psycopg2 handles it properly
-                cursor.execute(sql_content)
+                # Execute SQL statements one by one to handle errors better
+                # Split by semicolon but preserve dollar-quoted strings
+                statements = []
+                current_statement = ""
+                in_dollar_quote = False
+                dollar_tag = None
+                
+                i = 0
+                while i < len(sql_content):
+                    char = sql_content[i]
+                    
+                    # Check for dollar-quoted strings (e.g., $$...$$ or $tag$...$tag$)
+                    if char == '$' and not in_dollar_quote:
+                        # Look ahead to find the closing tag
+                        j = i + 1
+                        tag_start = i
+                        while j < len(sql_content) and sql_content[j] not in [' ', '\n', '\t', '$']:
+                            j += 1
+                        if j < len(sql_content) and sql_content[j] == '$':
+                            dollar_tag = sql_content[tag_start:j+1]
+                            in_dollar_quote = True
+                            current_statement += sql_content[i:j+1]
+                            i = j + 1
+                            continue
+                    elif in_dollar_quote and sql_content[i:i+len(dollar_tag)] == dollar_tag:
+                        current_statement += dollar_tag
+                        i += len(dollar_tag)
+                        in_dollar_quote = False
+                        dollar_tag = None
+                        continue
+                    
+                    if not in_dollar_quote and char == ';':
+                        stmt = current_statement.strip()
+                        if stmt and not stmt.startswith('--'):
+                            statements.append(stmt)
+                        current_statement = ""
+                    else:
+                        current_statement += char
+                    i += 1
+                
+                # Add final statement if any
+                if current_statement.strip() and not current_statement.strip().startswith('--'):
+                    statements.append(current_statement.strip())
+                
+                # Execute each statement
+                for stmt in statements:
+                    if stmt.strip():
+                        try:
+                            cursor.execute(stmt)
+                        except Exception as e:
+                            # Some errors are expected (e.g., table already exists)
+                            error_msg = str(e)
+                            if 'already exists' not in error_msg.lower() and 'duplicate' not in error_msg.lower():
+                                print(f"Warning: Error executing statement: {error_msg[:100]}")
+                                print(f"Statement: {stmt[:200]}...")
+                
                 conn.commit()
                 cursor.close()
         except Exception as e:

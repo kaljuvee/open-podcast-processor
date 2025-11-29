@@ -3,8 +3,11 @@
 -- Note: Tables are created in the schema specified by DB_SCHEMA env var (default: public)
 -- If using a custom schema (e.g., 'opp'), ensure the schema exists first
 
+-- Schema creation is handled by PostgresDB._ensure_schema()
+-- This file uses {schema} placeholder which gets replaced with actual schema name
+
 -- Users table
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS {schema}.users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255),
@@ -13,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- Feeds table
-CREATE TABLE IF NOT EXISTS feeds (
+CREATE TABLE IF NOT EXISTS {schema}.feeds (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     url VARCHAR(1000) NOT NULL UNIQUE,
@@ -24,22 +27,22 @@ CREATE TABLE IF NOT EXISTS feeds (
 );
 
 -- Feed-User association table (many-to-many)
-CREATE TABLE IF NOT EXISTS feed_user (
+CREATE TABLE IF NOT EXISTS {schema}.feed_user (
     id SERIAL PRIMARY KEY,
-    feed_id INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feed_id INTEGER NOT NULL REFERENCES {schema}.feeds(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES {schema}.users(id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(feed_id, user_id)
 );
 
 -- Indexes for feeds
-CREATE INDEX IF NOT EXISTS idx_feeds_url ON feeds(url);
-CREATE INDEX IF NOT EXISTS idx_feeds_enabled ON feeds(enabled);
-CREATE INDEX IF NOT EXISTS idx_feed_user_feed_id ON feed_user(feed_id);
-CREATE INDEX IF NOT EXISTS idx_feed_user_user_id ON feed_user(user_id);
+CREATE INDEX IF NOT EXISTS idx_feeds_url ON {schema}.feeds(url);
+CREATE INDEX IF NOT EXISTS idx_feeds_enabled ON {schema}.feeds(enabled);
+CREATE INDEX IF NOT EXISTS idx_feed_user_feed_id ON {schema}.feed_user(feed_id);
+CREATE INDEX IF NOT EXISTS idx_feed_user_user_id ON {schema}.feed_user(user_id);
 
 -- Podcasts table
-CREATE TABLE IF NOT EXISTS podcasts (
+CREATE TABLE IF NOT EXISTS {schema}.podcasts (
     id SERIAL PRIMARY KEY,
     title VARCHAR(500) NOT NULL,
     description TEXT,
@@ -66,12 +69,12 @@ CREATE TABLE IF NOT EXISTS podcasts (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_podcasts_status ON podcasts(status);
-CREATE INDEX IF NOT EXISTS idx_podcasts_processed_at ON podcasts(processed_at);
-CREATE INDEX IF NOT EXISTS idx_podcasts_published_at ON podcasts(published_at);
-CREATE INDEX IF NOT EXISTS idx_podcasts_feed_name ON podcasts(podcast_feed_name);
-CREATE INDEX IF NOT EXISTS idx_podcasts_transcript_gin ON podcasts USING GIN(transcript);
-CREATE INDEX IF NOT EXISTS idx_podcasts_summary_gin ON podcasts USING GIN(summary);
+CREATE INDEX IF NOT EXISTS idx_podcasts_status ON {schema}.podcasts(status);
+CREATE INDEX IF NOT EXISTS idx_podcasts_processed_at ON {schema}.podcasts(processed_at);
+CREATE INDEX IF NOT EXISTS idx_podcasts_published_at ON {schema}.podcasts(published_at);
+CREATE INDEX IF NOT EXISTS idx_podcasts_feed_name ON {schema}.podcasts(podcast_feed_name);
+CREATE INDEX IF NOT EXISTS idx_podcasts_transcript_gin ON {schema}.podcasts USING GIN(transcript);
+CREATE INDEX IF NOT EXISTS idx_podcasts_summary_gin ON {schema}.podcasts USING GIN(summary);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -83,17 +86,17 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers to auto-update updated_at
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON {schema}.users
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_feeds_updated_at BEFORE UPDATE ON feeds
+CREATE TRIGGER update_feeds_updated_at BEFORE UPDATE ON {schema}.feeds
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_podcasts_updated_at BEFORE UPDATE ON podcasts
+CREATE TRIGGER update_podcasts_updated_at BEFORE UPDATE ON {schema}.podcasts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- View for podcast statistics
-CREATE OR REPLACE VIEW podcast_stats AS
+CREATE OR REPLACE VIEW {schema}.podcast_stats AS
 SELECT 
     COUNT(*) as total_podcasts,
     COUNT(*) FILTER (WHERE status = 'downloaded') as downloaded_count,
@@ -109,5 +112,5 @@ SELECT
     COUNT(DISTINCT podcast_feed_name) as unique_feeds,
     AVG(duration_seconds) as avg_duration_seconds,
     SUM(file_size_bytes) / 1024 / 1024 as total_size_mb
-FROM podcasts;
+FROM {schema}.podcasts;
 
