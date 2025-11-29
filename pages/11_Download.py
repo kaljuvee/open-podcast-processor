@@ -1,17 +1,20 @@
 """
 Download Episodes Page
-Simple interface for downloading podcast episodes from RSS feeds
+Smart interface for finding and downloading podcast episodes
 """
 
 import streamlit as st
 from pathlib import Path
+import feedparser
+
 from utils.postgres_db import PostgresDB
-from utils.download import download_feeds
+from utils.search_langraph_util import search_podcast_rss_feed
+from utils.downloader import PodcastDownloader
 
 st.set_page_config(page_title="Download Episodes", page_icon="📥", layout="wide")
 
 st.title("📥 Download Podcast Episodes")
-st.markdown("**Step 1**: Add feeds and download episodes to get started")
+st.markdown("**Step 1**: Search for podcasts and download episodes")
 
 # Initialize database
 try:
@@ -28,30 +31,170 @@ user_id = db.get_or_create_user(DEFAULT_USER_EMAIL, name="Default User")
 # Load feeds from database
 feeds = db.get_user_feeds(user_id=user_id)
 
-# Add Feed Section
-with st.expander("➕ Add New Feed", expanded=len(feeds) == 0):
-    st.markdown("**Paste an RSS feed URL to add it:**")
+# Add Feed Section - Smart Search
+st.markdown("### 🔍 Add New Podcast Feed")
+
+# Tabs for search vs manual entry
+tab1, tab2 = st.tabs(["🔍 Search by Name (AI)", "📋 Manual Entry (Plan B)"])
+
+with tab1:
+    st.markdown("**Search for podcasts by name using AI**")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        podcast_search = st.text_input(
+            "Podcast Name",
+            placeholder="e.g., 'The Tim Ferriss Show' or 'Lex Fridman Podcast'",
+            key="podcast_search",
+            label_visibility="collapsed"
+        )
+    with col2:
+        search_button = st.button("🔍 Search", type="primary", use_container_width=True)
+    
+    # Check API keys
+    try:
+        from utils.config import get_groq_api_key
+        groq_key = get_groq_api_key()
+        tavily_available = True
+        try:
+            from utils.search_langraph_util import get_tavily_api_key
+            tavily_key = get_tavily_api_key()
+        except ValueError:
+            tavily_available = False
+    except ValueError:
+        st.error("⚠️ GROQ_API_KEY not found. Please set it in your .env file")
+        st.stop()
+    
+    if not tavily_available:
+        st.warning("⚠️ TAVILY_API_KEY not found. Please set it in your .env file for search functionality.")
+        st.code("echo 'TAVILY_API_KEY=your-key-here' >> .env")
+    
+    # Search results
+    if search_button and podcast_search:
+        if not tavily_available:
+            st.error("Cannot search: TAVILY_API_KEY not configured")
+        else:
+            with st.spinner(f"🔍 Searching for '{podcast_search}'..."):
+                search_result = search_podcast_rss_feed(podcast_search)
+                
+                if search_result.get('error'):
+                    st.error(f"❌ Search failed: {search_result['error']}")
+                elif search_result.get('rss_feed'):
+                    st.session_state['search_result'] = search_result
+                    st.success("✅ Found podcast!")
+    
+    # Display search result and confirmation
+    if 'search_result' in st.session_state:
+        result = st.session_state['search_result']
+        
+        st.markdown("---")
+        st.markdown("### 📻 Found Podcast")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.markdown(f"**{result.get('podcast_name', 'Unknown')}**")
+            if result.get('description'):
+                st.caption(result['description'])
+            st.markdown(f"**RSS Feed:** `{result.get('rss_feed')}`")
+            
+            confidence = result.get('confidence', 0.0)
+            if confidence >= 0.7:
+                st.success(f"✅ High confidence ({confidence:.0%})")
+            elif confidence >= 0.4:
+                st.warning(f"⚠️ Medium confidence ({confidence:.0%})")
+            else:
+                st.error(f"❌ Low confidence ({confidence:.0%})")
+        
+        with col2:
+            st.metric("Confidence", f"{confidence:.0%}")
+        
+        # Category selection
+        feed_category = st.selectbox(
+            "Category",
+            ["trading", "business", "venture", "product", "saas", "ai", "investing", "general"],
+            key="search_feed_category",
+            index=7
+        )
+        
+        # Confirm and add feed
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Confirm & Add Feed", type="primary", use_container_width=True):
+                try:
+                    # Validate RSS feed
+                    parsed = feedparser.parse(result['rss_feed'])
+                    if parsed.bozo:
+                        st.error("⚠️ Invalid RSS feed. Please check the URL.")
+                    else:
+                        feed_name = parsed.feed.get('title', result.get('podcast_name', 'Unknown'))
+                        
+                        # Add feed to database
+                        feed_id = db.add_feed(
+                            name=feed_name,
+                            url=result['rss_feed'],
+                            category=feed_category,
+                            user_id=user_id
+                        )
+                        
+                        st.success(f"✅ Added feed: {feed_name}")
+                        
+                        # Option to download immediately
+                        download_immediately = st.checkbox(
+                            "Download episodes now",
+                            value=True,
+                            key="download_after_add"
+                        )
+                        
+                        if download_immediately:
+                            st.session_state['feed_to_download'] = {
+                                'id': feed_id,
+                                'name': feed_name,
+                                'url': result['rss_feed'],
+                                'category': feed_category
+                            }
+                        
+                        # Clear search result
+                        del st.session_state['search_result']
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to add feed: {e}")
+        
+        with col2:
+            if st.button("🔄 Search Again", use_container_width=True):
+                del st.session_state['search_result']
+                st.rerun()
+        
+        # Show search results details
+        with st.expander("🔍 Search Details", expanded=False):
+            if result.get('search_results'):
+                st.write("**Search Results Used:**")
+                for i, sr in enumerate(result['search_results'][:3], 1):
+                    st.write(f"{i}. [{sr.get('title', 'N/A')}]({sr.get('url', '#')})")
+                    st.caption(sr.get('content', '')[:200] + "...")
+
+with tab2:
+    st.markdown("**Manually paste an RSS feed URL**")
     
     col1, col2 = st.columns([3, 1])
     with col1:
         feed_url = st.text_input(
             "RSS Feed URL",
             placeholder="https://example.com/feed/podcast",
-            key="new_feed_url",
+            key="manual_feed_url",
             label_visibility="collapsed"
         )
     with col2:
         feed_category = st.selectbox(
             "Category",
             ["trading", "business", "venture", "product", "saas", "ai", "investing", "general"],
-            key="new_feed_category"
+            key="manual_feed_category",
+            index=7
         )
     
-    if st.button("➕ Add Feed", type="primary"):
+    if st.button("➕ Add Feed", type="primary", use_container_width=True):
         if feed_url:
             try:
                 # Try to fetch feed to get name
-                import feedparser
                 parsed = feedparser.parse(feed_url)
                 
                 if parsed.bozo:
@@ -68,17 +211,35 @@ with st.expander("➕ Add New Feed", expanded=len(feeds) == 0):
                     )
                     
                     st.success(f"✅ Added feed: {feed_name}")
+                    
+                    # Option to download immediately
+                    download_immediately = st.checkbox(
+                        "Download episodes now",
+                        value=True,
+                        key="download_after_add_manual"
+                    )
+                    
+                    if download_immediately:
+                        st.session_state['feed_to_download'] = {
+                            'id': feed_id,
+                            'name': feed_name,
+                            'url': feed_url,
+                            'category': feed_category
+                        }
+                    
                     st.rerun()
             except Exception as e:
                 st.error(f"❌ Failed to add feed: {e}")
         else:
             st.warning("Please enter a feed URL")
 
+st.divider()
+
+# Download Section
 if not feeds:
     st.warning("⚠️ No feeds configured yet.")
-    st.info("Add feeds using the form above to get started")
+    st.info("Add feeds using the search or manual entry above to get started")
 else:
-    # Main download interface
     st.markdown("### 🎙️ Available Podcast Feeds")
     st.info(f"Found {len(feeds)} configured feeds")
 
@@ -102,6 +263,20 @@ with col2:
         help="Select which feeds you want to download episodes from"
     )
 
+# Auto-download if feed was just added
+if 'feed_to_download' in st.session_state:
+    feed_info = st.session_state['feed_to_download']
+    st.info(f"📥 Auto-downloading episodes from: {feed_info['name']}")
+    
+    # Auto-select this feed
+    feed_display_name = f"{feed_info['name']} ({feed_info['category']})"
+    if feed_display_name not in selected_feeds:
+        selected_feeds.append(feed_display_name)
+    
+    # Auto-trigger download
+    st.session_state['auto_download'] = True
+    del st.session_state['feed_to_download']
+
 # Show selected feeds
 if selected_feeds:
     st.markdown(f"**Selected**: {len(selected_feeds)} feed(s)")
@@ -121,7 +296,14 @@ if selected_feeds:
     st.markdown("---")
     
     # Download button
-    if st.button("📥 Download Episodes Now", type="primary", use_container_width=True):
+    download_triggered = st.button("📥 Download Episodes Now", type="primary", use_container_width=True)
+    
+    # Auto-download trigger
+    if st.session_state.get('auto_download', False):
+        download_triggered = True
+        st.session_state['auto_download'] = False
+    
+    if download_triggered:
         # Create progress indicators
         overall_progress = st.progress(0)
         status_container = st.container()
@@ -134,7 +316,6 @@ if selected_feeds:
             feed_name = selected_feed.split(' (')[0]
             feed = next((f for f in feeds if f['name'] == feed_name), None)
             if feed:
-                # Convert database feed to config format
                 selected_feed_configs.append({
                     'name': feed['name'],
                     'url': feed['url'],
@@ -147,13 +328,11 @@ if selected_feeds:
             try:
                 status_text.info(f"🔄 Starting download of {total_feeds} feed(s)...")
                 
-                # Process feeds one by one with progress updates
                 results = {
                     'total_downloaded': 0,
                     'feed_results': {}
                 }
                 
-                # Create feed progress container
                 feed_progress_container = st.container()
                 
                 for idx, feed_config in enumerate(selected_feed_configs):
@@ -162,30 +341,22 @@ if selected_feeds:
                     overall_progress.progress(progress)
                     status_text.info(f"📥 Processing feed {idx + 1}/{total_feeds}: {feed_name}...")
                     
-                    # Show spinner for this feed
                     with feed_progress_container:
                         with st.spinner(f"Downloading from {feed_name}..."):
-                            # Use PodcastDownloader with PostgreSQL
-                            from utils.downloader import PodcastDownloader
+                            downloader = PodcastDownloader(
+                                db=db,
+                                data_dir="data",
+                                max_episodes=max_episodes
+                            )
                             
-                            # Ensure feed exists in database
-                            downloader = PodcastDownloader(db=db, data_dir="data", max_episodes=max_episodes)
                             feed_id = downloader.add_feed(
                                 name=feed_config['name'],
                                 url=feed_config['url'],
                                 category=feed_config.get('category', 'general')
                             )
                             
-                            # Process feed and download episodes
                             count = downloader.process_feed(feed_config['url'])
-                            
-                            # Convert to expected format
-                            feed_results = {
-                                'total_downloaded': count,
-                                'feed_results': {feed_config['name']: count}
-                            }
                     
-                    count = feed_results['total_downloaded']
                     results['feed_results'][feed_name] = count
                     results['total_downloaded'] += count
                     
@@ -194,13 +365,11 @@ if selected_feeds:
                     else:
                         st.info(f"ℹ️ {feed_name}: No new episodes (may already exist)")
                 
-                # Complete
                 overall_progress.progress(1.0)
                 status_text.success(f"✅ Download complete!")
                 
                 st.success(f"🎉 **Total**: {results['total_downloaded']} episodes downloaded")
                 
-                # Display summary
                 st.markdown("---")
                 st.markdown("### 📊 Download Summary")
                 for feed_name, count in results['feed_results'].items():
@@ -210,7 +379,6 @@ if selected_feeds:
                     with col2:
                         st.metric("Episodes", count)
                 
-                # Show next step
                 st.markdown("---")
                 st.markdown("### ✅ Next Step: Process Episodes")
                 st.info(f"You now have {results['total_downloaded']} episodes ready to process!")
@@ -250,10 +418,10 @@ with st.sidebar:
     
     st.markdown("### 💡 Tips")
     st.markdown("""
+    - **Search by name** to find podcasts automatically
+    - Use **manual entry** if you have the RSS URL
     - Start with 3-5 episodes per feed
-    - Select feeds you're interested in
     - Download takes ~30 seconds per episode
-    - Episodes are saved to `data/audio/`
     """)
     
     st.markdown("---")

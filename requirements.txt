@@ -5,6 +5,7 @@ pyyaml
 langchain
 langchain-groq
 langchain-core
+langchain-community
 pandas
 plotly
 python-dotenv
@@ -13,3 +14,4 @@ psycopg2-binary
 sqlalchemy
 scikit-learn
 numpy
+tavily-python
