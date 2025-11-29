@@ -1,7 +1,7 @@
 """
 Topic analysis utility using Groq via LangChain to discover common topics across episodes.
 Results are cached in the database to avoid re-running expensive analysis.
-Supports both DuckDB (P3Database) and PostgreSQL (PostgresDB).
+Uses PostgreSQL (PostgresDB) for storage.
 """
 
 import json
@@ -11,7 +11,6 @@ from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
-from utils.database import P3Database
 from utils.postgres_db import PostgresDB
 from utils.config import get_groq_api_key, get_groq_model, get_groq_topic_temperature, get_groq_max_tokens
 
@@ -576,7 +575,7 @@ def analyze_podcast_topics_from_postgres(
 
 def analyze_podcast_topics(
     podcast_id: Optional[int],
-    db: P3Database,
+    db: PostgresDB,
     num_topics: int = 10,
     use_cache: bool = True
 ) -> List[Dict[str, Any]]:

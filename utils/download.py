@@ -6,8 +6,8 @@ Extracted from Streamlit pages.
 from typing import List, Dict, Optional
 from pathlib import Path
 import yaml
-from utils.database import P3Database
 from utils.downloader import PodcastDownloader
+from utils.postgres_db import PostgresDB
 
 
 def load_feeds_config(config_path: Optional[Path] = None) -> Dict:
@@ -44,7 +44,7 @@ def load_feeds_config(config_path: Optional[Path] = None) -> Dict:
 def download_feeds(
     feed_configs: List[Dict],
     max_episodes: int = 5,
-    db: Optional[P3Database] = None,
+    db: Optional[PostgresDB] = None,
     data_dir: str = "data",
     audio_format: str = "wav"
 ) -> Dict[str, int]:
@@ -55,7 +55,7 @@ def download_feeds(
     Args:
         feed_configs: List of feed configuration dicts (with 'name', 'url', 'category')
         max_episodes: Maximum episodes per feed
-        db: Database instance (creates new if not provided)
+        db: Database instance (creates new PostgreSQL if not provided)
         data_dir: Directory for storing downloaded files
         audio_format: Audio format (wav, mp3)
         
@@ -66,7 +66,7 @@ def download_feeds(
         }
     """
     if db is None:
-        db = P3Database()
+        db = PostgresDB()
         should_close = True
     else:
         should_close = False

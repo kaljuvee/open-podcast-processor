@@ -4,7 +4,7 @@ All functionality consolidated from p3/ directory.
 """
 
 # Core classes
-from .database import P3Database
+# Note: P3Database (DuckDB) removed - use PostgresDB instead
 from .downloader import PodcastDownloader
 from .transcriber_groq import AudioTranscriber
 from .cleaner_groq import TranscriptCleaner
@@ -13,15 +13,7 @@ from .config import get_groq_api_key, get_groq_model, get_api_key  # Backward co
 # Utility functions
 from .processing import process_all_episodes, transcribe_episode, summarize_episode
 from .download import download_feeds, load_feeds_config
-from .db_util import (
-    verify_schema,
-    get_database_stats,
-    query_podcasts,
-    query_episodes,
-    query_transcripts,
-    query_summaries,
-    test_database_operations
-)
+# Note: db_util functions removed - they depend on DuckDB P3Database
 from .audio import check_ffmpeg_installed, normalize_audio
 from .batch_download import batch_download_one_per_feed
 from .batch_process import batch_transcribe_downloaded, batch_summarize_transcribed, batch_process_all
@@ -31,7 +23,6 @@ __version__ = "0.1.0"
 
 __all__ = [
     # Core classes
-    'P3Database',
     'PodcastDownloader',
     'AudioTranscriber',
     'TranscriptCleaner',
@@ -45,14 +36,6 @@ __all__ = [
     # Download utilities
     'download_feeds',
     'load_feeds_config',
-    # Database utilities
-    'verify_schema',
-    'get_database_stats',
-    'query_podcasts',
-    'query_episodes',
-    'query_transcripts',
-    'query_summaries',
-    'test_database_operations',
     # Audio utilities
     'check_ffmpeg_installed',
     'normalize_audio',
