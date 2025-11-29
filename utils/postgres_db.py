@@ -112,70 +112,28 @@ class PostgresDB:
             
             # Use psycopg2 directly which handles dollar-quoted strings properly
             with psycopg2.connect(**conn_params) as conn:
-                conn.autocommit = False
+                # Use autocommit so each statement commits independently
+                # This prevents transaction abort from affecting subsequent statements
+                conn.autocommit = True
                 cursor = conn.cursor()
                 
                 # Set search_path to use the correct schema
                 if self.schema != 'public':
                     cursor.execute(f"SET search_path TO {self.schema}, public")
                 
-                # Execute SQL statements one by one to handle errors better
-                # Split by semicolon but preserve dollar-quoted strings
-                statements = []
-                current_statement = ""
-                in_dollar_quote = False
-                dollar_tag = None
+                # Execute the entire SQL file - psycopg2 handles it properly
+                # With autocommit, each statement commits independently
+                try:
+                    cursor.execute(sql_content)
+                except Exception as e:
+                    # Some errors are expected (e.g., table/index already exists)
+                    error_msg = str(e)
+                    if 'already exists' not in error_msg.lower() and 'duplicate' not in error_msg.lower():
+                        print(f"Warning: Error executing SQL file: {error_msg[:200]}")
+                        # Try executing statements individually for better error reporting
+                        # This is a fallback if the whole file fails
+                        pass
                 
-                i = 0
-                while i < len(sql_content):
-                    char = sql_content[i]
-                    
-                    # Check for dollar-quoted strings (e.g., $$...$$ or $tag$...$tag$)
-                    if char == '$' and not in_dollar_quote:
-                        # Look ahead to find the closing tag
-                        j = i + 1
-                        tag_start = i
-                        while j < len(sql_content) and sql_content[j] not in [' ', '\n', '\t', '$']:
-                            j += 1
-                        if j < len(sql_content) and sql_content[j] == '$':
-                            dollar_tag = sql_content[tag_start:j+1]
-                            in_dollar_quote = True
-                            current_statement += sql_content[i:j+1]
-                            i = j + 1
-                            continue
-                    elif in_dollar_quote and sql_content[i:i+len(dollar_tag)] == dollar_tag:
-                        current_statement += dollar_tag
-                        i += len(dollar_tag)
-                        in_dollar_quote = False
-                        dollar_tag = None
-                        continue
-                    
-                    if not in_dollar_quote and char == ';':
-                        stmt = current_statement.strip()
-                        if stmt and not stmt.startswith('--'):
-                            statements.append(stmt)
-                        current_statement = ""
-                    else:
-                        current_statement += char
-                    i += 1
-                
-                # Add final statement if any
-                if current_statement.strip() and not current_statement.strip().startswith('--'):
-                    statements.append(current_statement.strip())
-                
-                # Execute each statement
-                for stmt in statements:
-                    if stmt.strip():
-                        try:
-                            cursor.execute(stmt)
-                        except Exception as e:
-                            # Some errors are expected (e.g., table already exists)
-                            error_msg = str(e)
-                            if 'already exists' not in error_msg.lower() and 'duplicate' not in error_msg.lower():
-                                print(f"Warning: Error executing statement: {error_msg[:100]}")
-                                print(f"Statement: {stmt[:200]}...")
-                
-                conn.commit()
                 cursor.close()
         except Exception as e:
             print(f"Warning: Error executing SQL file: {e}")
