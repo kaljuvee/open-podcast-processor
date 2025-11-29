@@ -5,31 +5,82 @@ Simple interface for downloading podcast episodes from RSS feeds
 
 import streamlit as st
 from pathlib import Path
-from utils.database import P3Database
-from utils.download import load_feeds_config, download_feeds
+from utils.postgres_db import PostgresDB
+from utils.download import download_feeds
 
 st.set_page_config(page_title="Download Episodes", page_icon="📥", layout="wide")
 
 st.title("📥 Download Podcast Episodes")
-st.markdown("**Step 1**: Select feeds and download episodes to get started")
+st.markdown("**Step 1**: Add feeds and download episodes to get started")
 
 # Initialize database
-db = P3Database()
+try:
+    db = PostgresDB()
+except Exception as e:
+    st.error(f"Failed to connect to PostgreSQL: {e}")
+    st.info("Please ensure DB_URL is set in your .env file")
+    st.stop()
 
-# Load configuration using utility function
-config = load_feeds_config()
+# Default user
+DEFAULT_USER_EMAIL = "kaljuvee@gmail.com"
+user_id = db.get_or_create_user(DEFAULT_USER_EMAIL, name="Default User")
 
-feeds = config.get('feeds', [])
-settings = config.get('settings', {})
+# Load feeds from database
+feeds = db.get_user_feeds(user_id=user_id)
+
+# Add Feed Section
+with st.expander("➕ Add New Feed", expanded=len(feeds) == 0):
+    st.markdown("**Paste an RSS feed URL to add it:**")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        feed_url = st.text_input(
+            "RSS Feed URL",
+            placeholder="https://example.com/feed/podcast",
+            key="new_feed_url",
+            label_visibility="collapsed"
+        )
+    with col2:
+        feed_category = st.selectbox(
+            "Category",
+            ["trading", "business", "venture", "product", "saas", "ai", "investing", "general"],
+            key="new_feed_category"
+        )
+    
+    if st.button("➕ Add Feed", type="primary"):
+        if feed_url:
+            try:
+                # Try to fetch feed to get name
+                import feedparser
+                parsed = feedparser.parse(feed_url)
+                
+                if parsed.bozo:
+                    st.warning("⚠️ Could not parse feed. Please check the URL.")
+                else:
+                    feed_name = parsed.feed.get('title', feed_url.split('/')[-1])
+                    
+                    # Add feed to database
+                    feed_id = db.add_feed(
+                        name=feed_name,
+                        url=feed_url,
+                        category=feed_category,
+                        user_id=user_id
+                    )
+                    
+                    st.success(f"✅ Added feed: {feed_name}")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"❌ Failed to add feed: {e}")
+        else:
+            st.warning("Please enter a feed URL")
 
 if not feeds:
     st.warning("⚠️ No feeds configured yet.")
-    st.info("Add feeds to config/feeds.yaml to get started")
-    st.stop()
-
-# Main download interface
-st.markdown("### 🎙️ Available Podcast Feeds")
-st.info(f"Found {len(feeds)} configured feeds")
+    st.info("Add feeds using the form above to get started")
+else:
+    # Main download interface
+    st.markdown("### 🎙️ Available Podcast Feeds")
+    st.info(f"Found {len(feeds)} configured feeds")
 
 # Settings
 col1, col2 = st.columns(2)
@@ -39,7 +90,7 @@ with col1:
         "Episodes per feed",
         min_value=1,
         max_value=20,
-        value=settings.get('max_episodes_per_feed', 5),
+        value=5,
         help="Number of latest episodes to download from each feed"
     )
 
@@ -47,7 +98,7 @@ with col2:
     selected_feeds = st.multiselect(
         "Select feeds to download",
         options=[f"{feed['name']} ({feed.get('category', 'general')})" for feed in feeds],
-        default=[f"{feed['name']} ({feed.get('category', 'general')})" for feed in feeds[:3]],
+        default=[f"{feed['name']} ({feed.get('category', 'general')})" for feed in feeds[:min(3, len(feeds))]],
         help="Select which feeds you want to download episodes from"
     )
 
@@ -83,7 +134,12 @@ if selected_feeds:
             feed_name = selected_feed.split(' (')[0]
             feed = next((f for f in feeds if f['name'] == feed_name), None)
             if feed:
-                selected_feed_configs.append(feed)
+                # Convert database feed to config format
+                selected_feed_configs.append({
+                    'name': feed['name'],
+                    'url': feed['url'],
+                    'category': feed.get('category', 'general')
+                })
         
         total_feeds = len(selected_feed_configs)
         
@@ -109,13 +165,25 @@ if selected_feeds:
                     # Show spinner for this feed
                     with feed_progress_container:
                         with st.spinner(f"Downloading from {feed_name}..."):
-                            # Download from this feed
-                            feed_results = download_feeds(
-                                feed_configs=[feed_config],
-                                max_episodes=max_episodes,
-                                db=db,
-                                data_dir="data"
+                            # Use PodcastDownloader with PostgreSQL
+                            from utils.downloader import PodcastDownloader
+                            
+                            # Ensure feed exists in database
+                            downloader = PodcastDownloader(db=db, data_dir="data", max_episodes=max_episodes)
+                            feed_id = downloader.add_feed(
+                                name=feed_config['name'],
+                                url=feed_config['url'],
+                                category=feed_config.get('category', 'general')
                             )
+                            
+                            # Process feed and download episodes
+                            count = downloader.process_feed(feed_config['url'])
+                            
+                            # Convert to expected format
+                            feed_results = {
+                                'total_downloaded': count,
+                                'feed_results': {feed_config['name']: count}
+                            }
                     
                     count = feed_results['total_downloaded']
                     results['feed_results'][feed_name] = count
@@ -148,7 +216,7 @@ if selected_feeds:
                 st.info(f"You now have {results['total_downloaded']} episodes ready to process!")
                 
                 if st.button("⚙️ Go to Process →", type="primary", key="goto_process"):
-                    st.switch_page("pages/1_Process.py")
+                    st.switch_page("pages/10_Process.py")
                     
             except Exception as e:
                 overall_progress.progress(1.0)
@@ -168,12 +236,12 @@ for feed in feeds:
     with st.expander(f"🎙️ {feed.get('name', 'Unknown')} - {feed.get('category', 'N/A')}"):
         st.write(f"**URL:** {feed.get('url', 'N/A')}")
         
-        # Check if feed exists in database
-        db_feed = db.get_podcast_by_url(feed['url'])
-        if db_feed:
-            st.success(f"✅ Registered in database (ID: {db_feed['id']})")
+        # Check if feed has episodes
+        feed_episodes = [p for p in db.get_all_podcasts() if p.get('feed_url') == feed['url']]
+        if feed_episodes:
+            st.success(f"✅ {len(feed_episodes)} episode(s) downloaded")
         else:
-            st.info("ℹ️ Not yet in database. Download episodes to register.")
+            st.info("ℹ️ No episodes downloaded yet")
 
 # Sidebar
 with st.sidebar:
@@ -192,13 +260,10 @@ with st.sidebar:
     
     st.markdown("### 📊 Current Status")
     try:
-        downloaded_count = len(db.get_episodes_by_status('downloaded'))
-        transcribed_count = len(db.get_episodes_by_status('transcribed'))
-        processed_count = len(db.get_episodes_by_status('processed'))
-        
-        st.metric("Downloaded", downloaded_count)
-        st.metric("Transcribed", transcribed_count)
-        st.metric("Processed", processed_count)
+        stats = db.get_stats()
+        st.metric("Downloaded", stats.get('downloaded_count', 0))
+        st.metric("Transcribed", stats.get('transcribed_count', 0))
+        st.metric("Processed", stats.get('processed_count', 0))
     except:
         st.metric("Downloaded", 0)
         st.metric("Transcribed", 0)

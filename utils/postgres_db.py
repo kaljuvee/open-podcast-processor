@@ -515,6 +515,189 @@ class PostgresDB:
         """Update episode status (alias for update_podcast)."""
         self.update_podcast(podcast_id=episode_id, status=status)
     
+    def get_or_create_user(self, email: str, name: str = None) -> int:
+        """
+        Get or create a user by email.
+        
+        Args:
+            email: User email
+            name: User name (optional)
+            
+        Returns:
+            int: User ID
+        """
+        session = self.SessionLocal()
+        try:
+            from sqlalchemy import text
+            # Check if user exists
+            result = session.execute(text(
+                f"SELECT id FROM {self.schema}.users WHERE email = :email"
+            ), {"email": email})
+            user = result.fetchone()
+            
+            if user:
+                return user[0]
+            
+            # Create new user
+            result = session.execute(text(f"""
+                INSERT INTO {self.schema}.users (email, name)
+                VALUES (:email, :name)
+                RETURNING id
+            """), {"email": email, "name": name})
+            user_id = result.fetchone()[0]
+            session.commit()
+            return user_id
+        finally:
+            session.close()
+    
+    def create_or_get_feed(self, name: str, url: str, category: str = None) -> int:
+        """
+        Create or get a feed by URL.
+        
+        Args:
+            name: Feed name
+            url: Feed URL
+            category: Feed category
+            
+        Returns:
+            int: Feed ID
+        """
+        session = self.SessionLocal()
+        try:
+            from sqlalchemy import text
+            # Check if feed exists
+            result = session.execute(text(
+                f"SELECT id FROM {self.schema}.feeds WHERE url = :url"
+            ), {"url": url})
+            feed = result.fetchone()
+            
+            if feed:
+                # Update name and category if provided
+                if name or category:
+                    session.execute(text(f"""
+                        UPDATE {self.schema}.feeds
+                        SET name = COALESCE(:name, name),
+                            category = COALESCE(:category, category),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :id
+                    """), {"id": feed[0], "name": name, "category": category})
+                    session.commit()
+                return feed[0]
+            
+            # Create new feed
+            result = session.execute(text(f"""
+                INSERT INTO {self.schema}.feeds (name, url, category)
+                VALUES (:name, :url, :category)
+                RETURNING id
+            """), {"name": name, "url": url, "category": category})
+            feed_id = result.fetchone()[0]
+            session.commit()
+            return feed_id
+        finally:
+            session.close()
+    
+    def associate_feed_with_user(self, feed_id: int, user_id: int):
+        """
+        Associate a feed with a user (many-to-many).
+        
+        Args:
+            feed_id: Feed ID
+            user_id: User ID
+        """
+        session = self.SessionLocal()
+        try:
+            from sqlalchemy import text
+            # Check if association exists
+            result = session.execute(text(f"""
+                SELECT id FROM {self.schema}.feed_user
+                WHERE feed_id = :feed_id AND user_id = :user_id
+            """), {"feed_id": feed_id, "user_id": user_id})
+            
+            if result.fetchone():
+                return  # Already associated
+            
+            # Create association
+            session.execute(text(f"""
+                INSERT INTO {self.schema}.feed_user (feed_id, user_id)
+                VALUES (:feed_id, :user_id)
+            """), {"feed_id": feed_id, "user_id": user_id})
+            session.commit()
+        finally:
+            session.close()
+    
+    def get_user_feeds(self, user_id: int = None, user_email: str = None) -> List[Dict[str, Any]]:
+        """
+        Get feeds for a user.
+        
+        Args:
+            user_id: User ID (optional)
+            user_email: User email (optional, used if user_id not provided)
+            
+        Returns:
+            List of feed dictionaries
+        """
+        session = self.SessionLocal()
+        try:
+            from sqlalchemy import text
+            
+            if user_id is None and user_email:
+                user = session.execute(text(
+                    f"SELECT id FROM {self.schema}.users WHERE email = :email"
+                ), {"email": user_email}).fetchone()
+                if user:
+                    user_id = user[0]
+                else:
+                    return []
+            
+            if user_id is None:
+                return []
+            
+            result = session.execute(text(f"""
+                SELECT f.id, f.name, f.url, f.category, f.enabled, f.created_at
+                FROM {self.schema}.feeds f
+                INNER JOIN {self.schema}.feed_user fu ON f.id = fu.feed_id
+                WHERE fu.user_id = :user_id AND f.enabled = TRUE
+                ORDER BY f.name
+            """), {"user_id": user_id})
+            
+            feeds = []
+            for row in result:
+                feeds.append({
+                    'id': row[0],
+                    'name': row[1],
+                    'url': row[2],
+                    'category': row[3],
+                    'enabled': row[4],
+                    'created_at': row[5]
+                })
+            return feeds
+        finally:
+            session.close()
+    
+    def add_feed(self, name: str, url: str, category: str = None, user_id: int = None, user_email: str = None) -> int:
+        """
+        Add a new feed and associate with user.
+        
+        Args:
+            name: Feed name
+            url: Feed URL
+            category: Feed category
+            user_id: User ID (optional)
+            user_email: User email (optional)
+            
+        Returns:
+            int: Feed ID
+        """
+        feed_id = self.create_or_get_feed(name, url, category)
+        
+        if user_id is None and user_email:
+            user_id = self.get_or_create_user(user_email)
+        
+        if user_id:
+            self.associate_feed_with_user(feed_id, user_id)
+        
+        return feed_id
+    
     def close(self):
         """Close database connection."""
         self.engine.dispose()

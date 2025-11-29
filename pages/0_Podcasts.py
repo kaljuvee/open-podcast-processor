@@ -101,16 +101,40 @@ if feed_filter != "All":
 else:
     podcasts = all_podcasts
 
+# Filter to only show podcasts with transcripts
+podcasts_with_transcripts = []
+for p in podcasts:
+    transcript = p.get('transcript')
+    if transcript is not None:
+        # Check if transcript has actual content
+        if isinstance(transcript, dict):
+            transcript_text = transcript.get('text', '')
+            segments = transcript.get('segments', [])
+            if transcript_text or (segments and len(segments) > 0):
+                podcasts_with_transcripts.append(p)
+        elif isinstance(transcript, str):
+            try:
+                transcript_dict = json.loads(transcript)
+                transcript_text = transcript_dict.get('text', '') if isinstance(transcript_dict, dict) else ''
+                segments = transcript_dict.get('segments', []) if isinstance(transcript_dict, dict) else []
+                if transcript_text or (segments and len(segments) > 0):
+                    podcasts_with_transcripts.append(p)
+            except:
+                # If it's a non-JSON string, consider it valid
+                if transcript.strip():
+                    podcasts_with_transcripts.append(p)
+
+podcasts = podcasts_with_transcripts
+
 if not podcasts:
-    st.info("No podcasts found. Run batch processing to populate the database.")
+    st.info("No podcasts with transcripts found. Run batch processing to transcribe episodes.")
     st.stop()
 
-# Count podcasts with transcripts
-podcasts_with_transcripts = sum(1 for p in podcasts if p.get('transcript') is not None)
+# Count podcasts with summaries
 podcasts_with_summaries = sum(1 for p in podcasts if p.get('summary') is not None)
 
-st.subheader(f"📋 Podcasts ({len(podcasts)} found)")
-st.caption(f"📝 {podcasts_with_transcripts} with transcripts | 📊 {podcasts_with_summaries} with summaries")
+st.subheader(f"📋 Podcasts with Transcripts ({len(podcasts)} found)")
+st.caption(f"📊 {podcasts_with_summaries} with summaries")
 
 # Display podcasts in expanders
 for podcast in podcasts:
@@ -159,7 +183,69 @@ for podcast in podcasts:
             if podcast.get('audio_file_path'):
                 st.write(f"**Audio File:** `{podcast['audio_file_path']}`")
         
-        # Transcript
+        # Summary (shown first)
+        summary = podcast.get('summary')
+        if summary:
+            st.subheader("📊 Summary")
+            
+            # Handle JSONB field - it may already be a dict or a string
+            if isinstance(summary, str):
+                try:
+                    summary = json.loads(summary)
+                except (json.JSONDecodeError, TypeError):
+                    st.warning("Could not parse summary data")
+                    summary = {}
+            elif not isinstance(summary, dict):
+                summary = {}
+            
+            # Full summary text
+            summary_text = summary.get('summary', '') if isinstance(summary, dict) else ''
+            if summary_text:
+                st.write(summary_text)
+            
+            # Key topics
+            key_topics = summary.get('key_topics', []) if isinstance(summary, dict) else []
+            if key_topics:
+                st.write("**Key Topics:**")
+                if isinstance(key_topics, list):
+                    st.write(", ".join([f"`{topic}`" for topic in key_topics if topic]))
+                else:
+                    st.write(str(key_topics))
+            
+            # Themes
+            themes = summary.get('themes', []) if isinstance(summary, dict) else []
+            if themes:
+                st.write("**Themes:**")
+                if isinstance(themes, list):
+                    st.write(", ".join([f"`{theme}`" for theme in themes if theme]))
+                else:
+                    st.write(str(themes))
+            
+            # Quotes
+            quotes = summary.get('quotes', []) if isinstance(summary, dict) else []
+            if quotes:
+                st.write("**Notable Quotes:**")
+                if isinstance(quotes, list):
+                    for quote in quotes:
+                        if quote:
+                            st.write(f"> {quote}")
+                else:
+                    st.write(str(quotes))
+            
+            # Startups/Companies
+            startups = summary.get('startups', []) if isinstance(summary, dict) else []
+            if startups:
+                st.write("**Companies Mentioned:**")
+                if isinstance(startups, list):
+                    st.write(", ".join([f"`{startup}`" for startup in startups if startup]))
+                else:
+                    st.write(str(startups))
+        else:
+            st.info("No summary available")
+        
+        st.divider()
+        
+        # Transcript (shown second)
         transcript = podcast.get('transcript')
         
         if transcript is not None:
@@ -319,66 +405,6 @@ for podcast in podcasts:
                         st.info("Enter a search term to find segments")
         else:
             st.info("No transcript available")
-        
-        # Summary
-        summary = podcast.get('summary')
-        if summary:
-            st.subheader("📊 Summary")
-            
-            # Handle JSONB field - it may already be a dict or a string
-            if isinstance(summary, str):
-                try:
-                    summary = json.loads(summary)
-                except (json.JSONDecodeError, TypeError):
-                    st.warning("Could not parse summary data")
-                    summary = {}
-            elif not isinstance(summary, dict):
-                summary = {}
-            
-            # Full summary text
-            summary_text = summary.get('summary', '') if isinstance(summary, dict) else ''
-            if summary_text:
-                st.write(summary_text)
-            
-            # Key topics
-            key_topics = summary.get('key_topics', []) if isinstance(summary, dict) else []
-            if key_topics:
-                st.write("**Key Topics:**")
-                if isinstance(key_topics, list):
-                    st.write(", ".join([f"`{topic}`" for topic in key_topics if topic]))
-                else:
-                    st.write(str(key_topics))
-            
-            # Themes
-            themes = summary.get('themes', []) if isinstance(summary, dict) else []
-            if themes:
-                st.write("**Themes:**")
-                if isinstance(themes, list):
-                    st.write(", ".join([f"`{theme}`" for theme in themes if theme]))
-                else:
-                    st.write(str(themes))
-            
-            # Quotes
-            quotes = summary.get('quotes', []) if isinstance(summary, dict) else []
-            if quotes:
-                st.write("**Notable Quotes:**")
-                if isinstance(quotes, list):
-                    for quote in quotes:
-                        if quote:
-                            st.write(f"> {quote}")
-                else:
-                    st.write(str(quotes))
-            
-            # Startups/Companies
-            startups = summary.get('startups', []) if isinstance(summary, dict) else []
-            if startups:
-                st.write("**Companies Mentioned:**")
-                if isinstance(startups, list):
-                    st.write(", ".join([f"`{startup}`" for startup in startups if startup]))
-                else:
-                    st.write(str(startups))
-        else:
-            st.info("No summary available")
         
         # Raw data (collapsible)
         with st.expander("🔧 Raw Data (JSON)", expanded=False):

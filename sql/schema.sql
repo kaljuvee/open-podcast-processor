@@ -12,6 +12,32 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Feeds table
+CREATE TABLE IF NOT EXISTS feeds (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    url VARCHAR(1000) NOT NULL UNIQUE,
+    category VARCHAR(100),
+    enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Feed-User association table (many-to-many)
+CREATE TABLE IF NOT EXISTS feed_user (
+    id SERIAL PRIMARY KEY,
+    feed_id INTEGER NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(feed_id, user_id)
+);
+
+-- Indexes for feeds
+CREATE INDEX IF NOT EXISTS idx_feeds_url ON feeds(url);
+CREATE INDEX IF NOT EXISTS idx_feeds_enabled ON feeds(enabled);
+CREATE INDEX IF NOT EXISTS idx_feed_user_feed_id ON feed_user(feed_id);
+CREATE INDEX IF NOT EXISTS idx_feed_user_user_id ON feed_user(user_id);
+
 -- Podcasts table
 CREATE TABLE IF NOT EXISTS podcasts (
     id SERIAL PRIMARY KEY,
@@ -58,6 +84,9 @@ $$ language 'plpgsql';
 
 -- Triggers to auto-update updated_at
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_feeds_updated_at BEFORE UPDATE ON feeds
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_podcasts_updated_at BEFORE UPDATE ON podcasts
