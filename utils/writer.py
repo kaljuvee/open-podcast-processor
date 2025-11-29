@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
-from .database import P3Database
+from utils.database import P3Database
 
 # Optional Ollama support for blog generation
 try:

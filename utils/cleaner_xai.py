@@ -1,33 +1,37 @@
-"""LLM-based transcript cleaning and summarization using XAI API."""
+"""LLM-based transcript cleaning and summarization using XAI API with LangChain."""
 
 import json
 import os
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from openai import OpenAI
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage, SystemMessage
 
-from .database import P3Database
-from .config import get_api_key
+from utils.database import P3Database
+from utils.config import get_api_key, get_grok_model
 
 
 class TranscriptCleaner:
-    def __init__(self, db: P3Database, api_key: str = None, model: str = "grok-beta"):
+    def __init__(self, db: P3Database, api_key: str = None, model: str = None):
         """
-        Initialize XAI cleaner.
+        Initialize XAI cleaner with LangChain.
         
         Args:
             db: Database instance
             api_key: XAI API key (defaults to environment/secrets)
-            model: XAI model to use (default: grok-beta)
+            model: XAI model to use (defaults to GROK_MODEL from .env or grok-2-1212)
         """
         self.db = db
         self.api_key = api_key or get_api_key()
-        self.model = model
+        self.model = model or get_grok_model()
         
-        # Initialize OpenAI client with XAI base URL
-        self.client = OpenAI(
+        # Initialize LangChain ChatOpenAI with XAI
+        self.llm = ChatOpenAI(
+            model=self.model,
             api_key=self.api_key,
-            base_url="https://api.x.ai/v1"
+            base_url="https://api.x.ai/v1",
+            temperature=0.2,
+            max_tokens=4000
         )
 
     def generate_summary(self, episode_id: int) -> Optional[Dict[str, Any]]:
@@ -82,23 +86,14 @@ Transcript:
 """ + text
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at analyzing podcast content. Return valid JSON only."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.2,
-                max_tokens=1000
-            )
+            # Use LangChain for XAI API access
+            messages = [
+                SystemMessage(content="You are an expert at analyzing podcast content. Return valid JSON only."),
+                HumanMessage(content=prompt)
+            ]
             
-            content = response.choices[0].message.content.strip()
+            response = self.llm.invoke(messages)
+            content = response.content.strip()
             
             # Extract JSON from response
             json_start = content.find('{')

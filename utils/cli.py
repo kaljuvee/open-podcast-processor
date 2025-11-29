@@ -5,41 +5,34 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 import click
-import yaml
 from rich.console import Console
 from rich.table import Table
 from rich.progress import track
 
-from .database import P3Database
-from .downloader import PodcastDownloader
-from .transcriber import AudioTranscriber
-from .cleaner import TranscriptCleaner
-from .exporter import DigestExporter
-from .writer import BlogWriter
+from utils.database import P3Database
+from utils.downloader import PodcastDownloader
+from utils.transcriber import AudioTranscriber
+from utils.cleaner import TranscriptCleaner
+from utils.exporter import DigestExporter
+from utils.writer import BlogWriter
+from utils.download import load_feeds_config
 
 console = Console()
 
 
 def load_config(config_path: str = "config/feeds.yaml"):
-    """Load configuration from YAML file."""
-    config_file = Path(config_path)
-    
-    if not config_file.exists():
-        console.print(f"[red]Config file not found: {config_path}[/red]")
-        console.print("Copy config/feeds.yaml.example to config/feeds.yaml and configure your feeds")
-        sys.exit(1)
-    
+    """Load configuration from YAML file using utils function."""
     try:
-        with open(config_file, 'r') as f:
-            return yaml.safe_load(f)
+        return load_feeds_config(Path(config_path))
     except Exception as e:
         console.print(f"[red]Error loading config: {e}[/red]")
+        console.print("Copy config/feeds.yaml.example to config/feeds.yaml and configure your feeds")
         sys.exit(1)
 
 
 @click.group()
 @click.option('--config', default="config/feeds.yaml", help='Configuration file path')
-@click.option('--db', default="data/p3.duckdb", help='Database file path')
+@click.option('--db', default="db/opp.duckdb", help='Database file path')
 @click.pass_context
 def main(ctx, config, db):
     """Parakeet Podcast Processor (P³) - Automated podcast processing."""
@@ -346,7 +339,7 @@ def init(ctx):
         console.print("✓ Created config/feeds.yaml from example")
     
     # Initialize database
-    db = P3Database("data/p3.duckdb")
+    db = P3Database("db/opp.duckdb")
     db.close()
     console.print("✓ Initialized database")
     

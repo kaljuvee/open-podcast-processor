@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import whisper
 
-from .database import P3Database
+from utils.database import P3Database
 
 # Optional Parakeet MLX support
 try:

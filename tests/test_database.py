@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from p3.database import P3Database
+from utils.database import P3Database
 
 
 def test_database():
@@ -19,6 +19,10 @@ def test_database():
     
     # Use test database
     test_db_path = "data/test_p3.duckdb"
+    
+    # Use consistent test URLs
+    test_feed_url = "https://test.example.com/feed_test.xml"
+    test_episode_url = "https://test.example.com/episode_test.mp3"
     
     try:
         # Test 1: Database initialization
@@ -48,7 +52,7 @@ def test_database():
         try:
             podcast_id = db.add_podcast(
                 title="Test Podcast",
-                rss_url="https://example.com/feed.xml",
+                rss_url=test_feed_url,
                 category="tech"
             )
             test_result["status"] = "passed"
@@ -68,7 +72,7 @@ def test_database():
         }
         
         try:
-            podcast = db.get_podcast_by_url("https://example.com/feed.xml")
+            podcast = db.get_podcast_by_url(test_feed_url)
             if podcast and podcast['title'] == "Test Podcast":
                 test_result["status"] = "passed"
                 test_result["message"] = "Podcast retrieved successfully"
@@ -94,7 +98,7 @@ def test_database():
                 podcast_id=1,
                 title="Test Episode",
                 date=datetime.now(),
-                url="https://example.com/episode1.mp3",
+                url=test_episode_url,
                 file_path="/tmp/test.mp3"
             )
             test_result["status"] = "passed"
@@ -114,7 +118,7 @@ def test_database():
         }
         
         try:
-            exists = db.episode_exists("https://example.com/episode1.mp3")
+            exists = db.episode_exists(test_episode_url)
             if exists:
                 test_result["status"] = "passed"
                 test_result["message"] = "Episode existence check works"
@@ -171,7 +175,8 @@ def test_database():
     output_dir = Path("test-results")
     output_dir.mkdir(exist_ok=True)
     
-    output_file = output_dir / "database_test.json"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"database_test_{timestamp}.json"
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2, default=str)
     

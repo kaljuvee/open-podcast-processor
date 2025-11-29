@@ -84,7 +84,7 @@ The application uses a unified configuration system:
 2. **Streamlit Cloud**: Loads from Streamlit secrets
 3. **Fallback**: Uses environment variables
 
-See `p3/config.py` for implementation details.
+See `utils/config.py` for implementation details.
 
 ## ⚠️ Limitations on Streamlit Cloud
 

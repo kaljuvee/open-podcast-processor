@@ -11,7 +11,7 @@ import feedparser
 import subprocess
 import tempfile
 
-from .database import P3Database
+from utils.database import P3Database
 
 
 class PodcastDownloader:
@@ -99,10 +99,16 @@ class PodcastDownloader:
                 str(output_path)
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Run ffmpeg with timeout - works in Streamlit subprocess mode
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True,
+                timeout=600  # 10 minute timeout for large files
+            )
             if result.returncode != 0:
                 print(f"FFmpeg error: {result.stderr}")
-                # Fallback to pydub
+                # Fallback to simpler conversion
                 return self._fallback_conversion(tmp_path, output_path)
             
             # Clean up temp file
@@ -123,7 +129,13 @@ class PodcastDownloader:
                 '-ar', '16000', '-ac', '1',
                 str(output_path)
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # Run ffmpeg with timeout - works in Streamlit subprocess mode
+            result = subprocess.run(
+                cmd, 
+                capture_output=True, 
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
             
             if result.returncode == 0:
                 os.unlink(input_path)

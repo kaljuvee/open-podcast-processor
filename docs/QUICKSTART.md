@@ -167,7 +167,7 @@ streamlit run Home.py
 
 Once you're comfortable with the basics:
 - Add more podcast feeds
-- Customize the summarization prompts (edit `p3/cleaner_xai.py`)
+- Customize the summarization prompts (edit `utils/cleaner_xai.py`)
 - Build custom analytics on the exported data
 - Integrate with your own tools via the JSON exports
 

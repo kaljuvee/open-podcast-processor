@@ -5,8 +5,10 @@ Test downloader module functionality
 import json
 from pathlib import Path
 from datetime import datetime
-from p3.database import P3Database
-from p3.downloader import PodcastDownloader
+from utils.database import P3Database
+from utils.downloader import PodcastDownloader
+from utils.download import load_feeds_config
+import feedparser
 
 
 def test_downloader():
@@ -48,17 +50,17 @@ def test_downloader():
         }
         
         try:
-            # Use actual feed from feeds.yaml
-            import yaml
-            from pathlib import Path
+            # Use actual feed from feeds.yaml via utils
+            config = load_feeds_config()
+            feeds = config.get('feeds', [])
             
-            config_file = Path("config/feeds.yaml")
-            if config_file.exists():
-                with open(config_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                feed_url = config['feeds'][0]['url']  # Use first feed
-            else:
-                feed_url = "https://feeds.simplecast.com/54nAGcIl"  # Fallback
+            if not feeds:
+                test_result["status"] = "skipped"
+                test_result["message"] = "No feeds configured in config/feeds.yaml"
+                results["tests"].append(test_result)
+                return results
+            
+            feed_url = feeds[0]['url']  # Use first feed from config
             
             feed = feedparser.parse(feed_url)
             
@@ -83,16 +85,17 @@ def test_downloader():
         }
         
         try:
-            import feedparser
+            # Parse feed again for this test using utils
+            config = load_feeds_config()
+            feeds = config.get('feeds', [])
             
-            # Parse feed again for this test
-            config_file = Path("config/feeds.yaml")
-            if config_file.exists():
-                with open(config_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                feed_url = config['feeds'][0]['url']
-            else:
-                feed_url = "https://feeds.simplecast.com/54nAGcIl"
+            if not feeds:
+                test_result["status"] = "skipped"
+                test_result["message"] = "No feeds configured in config/feeds.yaml"
+                results["tests"].append(test_result)
+                return results
+            
+            feed_url = feeds[0]['url']  # Use first feed from config
             
             feed = feedparser.parse(feed_url)
             
@@ -175,7 +178,8 @@ def test_downloader():
     output_dir = Path("test-results")
     output_dir.mkdir(exist_ok=True)
     
-    output_file = output_dir / "downloader_test.json"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"downloader_test_{timestamp}.json"
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2, default=str)
     

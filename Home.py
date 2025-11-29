@@ -4,8 +4,8 @@ Streamlit application for automated podcast processing with XAI API
 """
 
 import streamlit as st
-import os
-from p3.database import P3Database
+from utils.database import P3Database
+from utils.config import get_api_key
 
 st.set_page_config(
     page_title="Open Podcast Processor",
@@ -41,12 +41,12 @@ st.title("🎙️ Open Podcast Processor")
 st.markdown("**Automated podcast processing with XAI API**")
 
 # Check API key
-api_key = os.getenv("XAI_API_KEY")
-if api_key:
+try:
+    api_key = get_api_key()
     st.success("✅ XAI API Key configured")
-else:
-    st.error("⚠️ XAI_API_KEY not found. Please set it in your environment variables.")
-    st.code("export XAI_API_KEY='your-key-here'")
+except ValueError as e:
+    st.error(f"⚠️ {str(e)}")
+    st.code("echo 'XAI_API_KEY=your-key-here' > .env")
     st.stop()
 
 # Initialize database

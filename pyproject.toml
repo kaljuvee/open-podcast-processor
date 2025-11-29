@@ -32,11 +32,11 @@ dev = [
 ]
 
 [project.scripts]
-p3 = "p3.cli:main"
+p3 = "utils.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["p3*"]
+include = ["utils*"]
 
 [tool.black]
 line-length = 88

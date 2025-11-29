@@ -13,6 +13,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from tests.test_database import test_database
 from tests.test_downloader import test_downloader
 from tests.test_xai_integration import test_xai_integration
+from tests.test_real_feed import test_real_feed
+from tests.test_utils import test_utils
+from tests.test_db_opp import test_db_opp
+from tests.test_ai_processing import test_ai_processing
 
 
 def run_all_tests():
@@ -72,6 +76,66 @@ def run_all_tests():
         })
     
     print()
+    
+    # Run real feed tests
+    print("Running real feed tests...")
+    try:
+        real_feed_results = test_real_feed()
+        all_results["test_modules"].append(real_feed_results)
+        print(f"✓ Real feed tests completed")
+    except Exception as e:
+        print(f"✗ Real feed tests failed: {e}")
+        all_results["test_modules"].append({
+            "test_name": "real_feed_test",
+            "error": str(e)
+        })
+    
+    print()
+    
+    # Run utils tests
+    print("Running utils tests...")
+    try:
+        utils_results = test_utils()
+        all_results["test_modules"].append(utils_results)
+        print(f"✓ Utils tests completed")
+    except Exception as e:
+        print(f"✗ Utils tests failed: {e}")
+        all_results["test_modules"].append({
+            "test_name": "utils_test",
+            "error": str(e)
+        })
+    
+    print()
+    
+    # Run db_opp tests
+    print("Running db_opp tests...")
+    try:
+        db_opp_results = test_db_opp()
+        all_results["test_modules"].append(db_opp_results)
+        print(f"✓ DB OPP tests completed")
+    except Exception as e:
+        print(f"✗ DB OPP tests failed: {e}")
+        all_results["test_modules"].append({
+            "test_name": "db_opp_test",
+            "error": str(e)
+        })
+    
+    print()
+    
+    # Run AI processing tests
+    print("Running AI processing tests...")
+    try:
+        ai_processing_results = test_ai_processing()
+        all_results["test_modules"].append(ai_processing_results)
+        print(f"✓ AI processing tests completed")
+    except Exception as e:
+        print(f"✗ AI processing tests failed: {e}")
+        all_results["test_modules"].append({
+            "test_name": "ai_processing_test",
+            "error": str(e)
+        })
+    
+    print()
     print("=" * 60)
     
     # Calculate overall summary
@@ -109,7 +173,8 @@ def run_all_tests():
     output_dir = Path("test-results")
     output_dir.mkdir(exist_ok=True)
     
-    output_file = output_dir / "all_tests_report.json"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"all_tests_report_{timestamp}.json"
     with open(output_file, 'w') as f:
         json.dump(all_results, f, indent=2, default=str)
     

@@ -3,12 +3,11 @@ Test with real RSS feed from feeds.yaml
 """
 
 import json
-import os
-import yaml
 from pathlib import Path
 from datetime import datetime
-from p3.database import P3Database
-from p3.downloader import PodcastDownloader
+from utils.database import P3Database
+from utils.downloader import PodcastDownloader
+from utils.download import load_feeds_config
 import feedparser
 
 
@@ -26,6 +25,16 @@ def test_real_feed():
     try:
         db = P3Database(db_path=test_db_path)
         
+        # Load config once for all tests
+        config = None
+        feeds = []
+        feed = None  # Will be set in Test 2
+        try:
+            config = load_feeds_config()
+            feeds = config.get('feeds', [])
+        except Exception as e:
+            print(f"Warning: Failed to load config: {e}")
+        
         # Test 1: Load feeds.yaml configuration
         test_result = {
             "name": "load_feeds_config",
@@ -34,23 +43,14 @@ def test_real_feed():
         }
         
         try:
-            config_file = Path("config/feeds.yaml")
-            if not config_file.exists():
-                test_result["status"] = "failed"
-                test_result["message"] = "feeds.yaml not found"
+            if config and len(feeds) > 0:
+                test_result["status"] = "passed"
+                test_result["message"] = f"Loaded {len(feeds)} feeds from config via utils"
+                test_result["feed_count"] = len(feeds)
+                test_result["first_feed"] = feeds[0].get('name')
             else:
-                with open(config_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                
-                feeds = config.get('feeds', [])
-                if len(feeds) > 0:
-                    test_result["status"] = "passed"
-                    test_result["message"] = f"Loaded {len(feeds)} feeds from config"
-                    test_result["feed_count"] = len(feeds)
-                    test_result["first_feed"] = feeds[0].get('name')
-                else:
-                    test_result["status"] = "failed"
-                    test_result["message"] = "No feeds in configuration"
+                test_result["status"] = "failed"
+                test_result["message"] = "No feeds in configuration"
         except Exception as e:
             test_result["status"] = "failed"
             test_result["message"] = f"Failed to load config: {str(e)}"
@@ -236,7 +236,8 @@ def test_real_feed():
     output_dir = Path("test-results")
     output_dir.mkdir(exist_ok=True)
     
-    output_file = output_dir / "real_feed_test.json"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = output_dir / f"real_feed_test_{timestamp}.json"
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2, default=str)
     

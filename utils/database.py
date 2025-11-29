@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 class P3Database:
-    def __init__(self, db_path: str = "data/p3.duckdb"):
+    def __init__(self, db_path: str = "db/opp.duckdb"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = duckdb.connect(str(self.db_path))
@@ -79,6 +79,20 @@ class P3Database:
             )
         """)
 
+        self.conn.execute("""
+            CREATE SEQUENCE IF NOT EXISTS topic_analysis_id_seq START 1
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS topic_analysis (
+                id INTEGER PRIMARY KEY DEFAULT nextval('topic_analysis_id_seq'),
+                podcast_id INTEGER REFERENCES podcasts(id),
+                analysis_type VARCHAR NOT NULL,  -- 'global' or 'podcast'
+                topics JSON NOT NULL,  -- List of {topic: str, count: int, episodes: List[int]}
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(podcast_id, analysis_type)
+            )
+        """)
+
     def add_podcast(self, title: str, rss_url: str, category: str = None) -> int:
         """Add new podcast feed."""
         # Get the next ID first
@@ -120,6 +134,30 @@ class P3Database:
             "SELECT 1 FROM episodes WHERE url = ?", (url,)
         ).fetchone()
         return result is not None
+
+    def get_episode_by_id(self, episode_id: int) -> Optional[Dict[str, Any]]:
+        """Get episode by ID."""
+        result = self.conn.execute("""
+            SELECT e.*, p.title as podcast_title 
+            FROM episodes e 
+            JOIN podcasts p ON e.podcast_id = p.id 
+            WHERE e.id = ?
+        """, (episode_id,)).fetchone()
+        
+        if result:
+            return {
+                "id": result[0],
+                "podcast_id": result[1],
+                "title": result[2],
+                "date": result[3],
+                "url": result[4],
+                "file_path": result[5],
+                "duration_seconds": result[6],
+                "status": result[7],
+                "created_at": result[8],
+                "podcast_title": result[9]
+            }
+        return None
 
     def get_episodes_by_status(self, status: str) -> List[Dict[str, Any]]:
         """Get episodes by processing status."""
@@ -239,6 +277,55 @@ class P3Database:
                 "podcast_title": row[10]
             })
         return summaries
+
+    def save_topic_analysis(self, podcast_id: Optional[int], analysis_type: str, topics: List[Dict[str, Any]]) -> int:
+        """Save topic analysis results (cached)."""
+        import json
+        next_id = self.conn.execute("SELECT nextval('topic_analysis_id_seq')").fetchone()[0]
+        
+        # Delete existing analysis if exists (handle NULL podcast_id)
+        if podcast_id is None:
+            self.conn.execute("""
+                DELETE FROM topic_analysis 
+                WHERE podcast_id IS NULL AND analysis_type = ?
+            """, (analysis_type,))
+        else:
+            self.conn.execute("""
+                DELETE FROM topic_analysis 
+                WHERE podcast_id = ? AND analysis_type = ?
+            """, (podcast_id, analysis_type))
+        
+        # Insert new analysis
+        self.conn.execute("""
+            INSERT INTO topic_analysis (id, podcast_id, analysis_type, topics)
+            VALUES (?, ?, ?, ?)
+        """, (next_id, podcast_id, analysis_type, json.dumps(topics)))
+        
+        return next_id
+
+    def get_topic_analysis(self, podcast_id: Optional[int], analysis_type: str) -> Optional[List[Dict[str, Any]]]:
+        """Get cached topic analysis."""
+        import json
+        
+        # Handle NULL podcast_id properly
+        if podcast_id is None:
+            result = self.conn.execute("""
+                SELECT topics FROM topic_analysis
+                WHERE podcast_id IS NULL AND analysis_type = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (analysis_type,)).fetchone()
+        else:
+            result = self.conn.execute("""
+                SELECT topics FROM topic_analysis
+                WHERE podcast_id = ? AND analysis_type = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (podcast_id, analysis_type)).fetchone()
+        
+        if result:
+            return json.loads(result[0])
+        return None
 
     def close(self):
         """Close database connection."""

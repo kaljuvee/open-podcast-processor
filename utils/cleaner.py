@@ -6,7 +6,7 @@ from datetime import datetime, date
 from typing import Dict, List, Optional, Any
 import httpx
 
-from .database import P3Database
+from utils.database import P3Database
 
 # Optional Ollama support
 try:

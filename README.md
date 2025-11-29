@@ -155,11 +155,17 @@ open-podcast-processor/
 │   ├── 0_RSS_Feeds.py        # RSS feed management
 │   ├── 1_Processing.py       # Transcription & summarization
 │   └── 2_View_Data.py        # Data viewing & export
-├── p3/                        # Core modules
+├── utils/                     # All functionality consolidated
 │   ├── database.py           # DuckDB operations
 │   ├── downloader.py         # RSS feed & download
 │   ├── transcriber_xai.py    # XAI transcription
-│   └── cleaner_xai.py        # XAI summarization
+│   ├── cleaner_xai.py        # XAI summarization
+│   ├── config.py             # Configuration (API keys)
+│   ├── download.py           # Download utilities
+│   ├── processing.py         # Processing utilities
+│   ├── db_util.py            # Database query utilities
+│   ├── audio.py              # Audio processing utilities
+│   └── cli.py                # Command-line interface
 ├── tests/                     # Test suite
 │   ├── test_database.py
 │   ├── test_downloader.py
@@ -168,8 +174,9 @@ open-podcast-processor/
 ├── config/                    # Configuration
 │   └── feeds.yaml            # RSS feed definitions
 ├── data/                      # Data storage
-│   ├── audio/                # Downloaded episodes
-│   └── p3.duckdb             # Database file
+│   └── audio/                # Downloaded episodes
+├── db/                        # Database storage
+│   └── opp.duckdb            # Open Podcast Processor database
 ├── test-results/              # Test outputs
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
