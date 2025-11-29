@@ -10,13 +10,13 @@ import sys
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tests.test_database import test_database
-from tests.test_downloader import test_downloader
+from tests.database_test import test_database
+from tests.downloader_test import test_downloader
 from tests.test_xai_integration import test_xai_integration
-from tests.test_real_feed import test_real_feed
-from tests.test_utils import test_utils
-from tests.test_db_opp import test_db_opp
-from tests.test_ai_processing import test_ai_processing
+from tests.real_feed_test import test_real_feed
+from tests.utils_test import test_utils
+from tests.db_opp_test import test_db_opp
+from tests.ai_processing_test import test_ai_processing
 
 
 def run_all_tests():

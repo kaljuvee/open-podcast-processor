@@ -4,13 +4,13 @@ Extracted from Streamlit pages.
 """
 
 from typing import Dict, List, Optional, Tuple
-from utils.database import P3Database
+from utils.postgres_db import PostgresDB
 from utils.transcriber_groq import AudioTranscriber
 from utils.cleaner_groq import TranscriptCleaner
 from utils.config import get_groq_api_key
 
 
-def transcribe_episode(episode_id: int, db: P3Database) -> Tuple[bool, Optional[str]]:
+def transcribe_episode(episode_id: int, db: PostgresDB) -> Tuple[bool, Optional[str]]:
     """
     Transcribe a single episode.
     
@@ -34,7 +34,7 @@ def transcribe_episode(episode_id: int, db: P3Database) -> Tuple[bool, Optional[
         return False, str(e)
 
 
-def summarize_episode(episode_id: int, db: P3Database) -> Tuple[bool, Optional[str], Optional[Dict]]:
+def summarize_episode(episode_id: int, db: PostgresDB) -> Tuple[bool, Optional[str], Optional[Dict]]:
     """
     Summarize a single episode.
     
@@ -58,7 +58,7 @@ def summarize_episode(episode_id: int, db: P3Database) -> Tuple[bool, Optional[s
         return False, str(e), None
 
 
-def process_all_episodes(db: P3Database) -> Dict[str, int]:
+def process_all_episodes(db: PostgresDB) -> Dict[str, int]:
     """
     Process all pending episodes (transcribe downloaded, summarize transcribed).
     
@@ -78,7 +78,7 @@ def process_all_episodes(db: P3Database) -> Dict[str, int]:
         'errors': 0
     }
     
-    api_key = get_api_key()
+    api_key = get_groq_api_key()
     
     # Step 1: Transcribe downloaded episodes
     downloaded = db.get_episodes_by_status('downloaded')

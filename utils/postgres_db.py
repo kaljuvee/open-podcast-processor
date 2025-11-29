@@ -76,6 +76,7 @@ class PostgresDB:
         """
         Execute SQL file to create schema.
         Uses psycopg2 directly to handle dollar-quoted strings properly.
+        Sets the search_path to use the correct schema.
         
         Args:
             sql_file_path: Path to SQL file
@@ -113,6 +114,10 @@ class PostgresDB:
             with psycopg2.connect(**conn_params) as conn:
                 conn.autocommit = False
                 cursor = conn.cursor()
+                
+                # Set search_path to use the correct schema
+                if self.schema != 'public':
+                    cursor.execute(f"SET search_path TO {self.schema}, public")
                 
                 # Execute the entire SQL file - psycopg2 handles it properly
                 cursor.execute(sql_content)
@@ -246,6 +251,7 @@ class PostgresDB:
         try:
             podcast = session.query(Podcast).filter(Podcast.id == podcast_id).first()
             if not podcast:
+                print(f"⚠️  Warning: Podcast {podcast_id} not found for update")
                 return
             
             if title is not None:
@@ -270,6 +276,12 @@ class PostgresDB:
                 podcast.processed_at = datetime.now()
             
             session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Error updating podcast {podcast_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         finally:
             session.close()
     
@@ -357,6 +369,151 @@ class PostgresDB:
             if row:
                 return dict(row._mapping)
             return {}
+    
+    def get_podcast_by_feed_url(self, feed_url: str) -> Optional[Dict[str, Any]]:
+        """Get podcast by feed URL (RSS URL)."""
+        session = self.SessionLocal()
+        try:
+            podcast = session.query(Podcast).filter(Podcast.feed_url == feed_url).first()
+            if podcast:
+                return self._podcast_to_dict(podcast)
+            return None
+        finally:
+            session.close()
+    
+    def episode_exists(self, episode_url: str) -> bool:
+        """Check if episode already exists by episode URL."""
+        session = self.SessionLocal()
+        try:
+            podcast = session.query(Podcast).filter(Podcast.episode_url == episode_url).first()
+            return podcast is not None
+        finally:
+            session.close()
+    
+    def get_episodes_by_status(self, status: str, limit: int = None) -> List[Dict[str, Any]]:
+        """
+        Get episodes by status (compatibility method).
+        
+        Args:
+            status: Status filter
+            limit: Maximum number of results
+            
+        Returns:
+            List of episode dictionaries
+        """
+        return self.get_all_podcasts(status=status, limit=limit)
+    
+    def get_episode_by_id(self, episode_id: int) -> Optional[Dict[str, Any]]:
+        """Get episode by ID (alias for get_podcast_by_id)."""
+        return self.get_podcast_by_id(episode_id)
+    
+    def get_transcripts_for_episode(self, episode_id: int) -> List[Dict[str, Any]]:
+        """
+        Get transcript segments for an episode.
+        Extracts segments from JSONB transcript field.
+        
+        Args:
+            episode_id: Episode ID
+            
+        Returns:
+            List of transcript segment dictionaries
+        """
+        episode = self.get_podcast_by_id(episode_id)
+        if not episode or not episode.get('transcript'):
+            return []
+        
+        transcript = episode['transcript']
+        if isinstance(transcript, dict):
+            segments = transcript.get('segments', [])
+            # Convert to expected format
+            result = []
+            for seg in segments:
+                result.append({
+                    'id': None,  # Not stored separately in PostgreSQL
+                    'episode_id': episode_id,
+                    'speaker': seg.get('speaker'),
+                    'timestamp_start': seg.get('start'),
+                    'timestamp_end': seg.get('end'),
+                    'text': seg.get('text', ''),
+                    'confidence': seg.get('confidence', 1.0),
+                    'created_at': None
+                })
+            return result
+        return []
+    
+    def add_transcript_segments(self, episode_id: int, segments: List[Dict[str, Any]]):
+        """
+        Add transcript segments to an episode.
+        Updates the transcript JSONB field.
+        
+        Args:
+            episode_id: Episode ID
+            segments: List of segment dictionaries
+        """
+        episode = self.get_podcast_by_id(episode_id)
+        if not episode:
+            print(f"⚠️  Warning: Episode {episode_id} not found in database")
+            return
+        
+        # Prepare transcript data
+        full_text = " ".join(seg.get('text', '') for seg in segments)
+        transcript_data = {
+            'segments': segments,
+            'text': full_text,
+            'language': 'en',  # Default, could be detected
+            'provider': 'groq',
+            'chunked': False
+        }
+        
+        # Update episode with transcript
+        try:
+            self.update_podcast(
+                podcast_id=episode_id,
+                status='transcribed',
+                transcript=transcript_data
+            )
+            print(f"   ✅ Transcript saved: {len(segments)} segments, {len(full_text):,} characters")
+        except Exception as e:
+            print(f"   ❌ Error saving transcript: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def add_summary(self, episode_id: int, key_topics: List[str], themes: List[str],
+                   quotes: List[str], startups: List[str], full_summary: str,
+                   digest_date: datetime = None):
+        """
+        Add summary to an episode.
+        Updates the summary JSONB field.
+        
+        Args:
+            episode_id: Episode ID
+            key_topics: List of key topics
+            themes: List of themes
+            quotes: List of quotes
+            startups: List of startups/companies
+            full_summary: Full summary text
+            digest_date: Digest date (optional)
+        """
+        summary_data = {
+            'key_topics': key_topics,
+            'themes': themes,
+            'quotes': quotes,
+            'startups': startups,
+            'summary': full_summary
+        }
+        
+        # Update episode with summary
+        self.update_podcast(
+            podcast_id=episode_id,
+            status='processed',
+            summary=summary_data,
+            processed_at=digest_date or datetime.now()
+        )
+    
+    def update_episode_status(self, episode_id: int, status: str):
+        """Update episode status (alias for update_podcast)."""
+        self.update_podcast(podcast_id=episode_id, status=status)
     
     def close(self):
         """Close database connection."""

@@ -11,3 +11,5 @@ python-dotenv
 pydub
 psycopg2-binary
 sqlalchemy
+scikit-learn
+numpy

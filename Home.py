@@ -4,7 +4,7 @@ Streamlit application for automated podcast processing with XAI API
 """
 
 import streamlit as st
-from utils.database import P3Database
+from utils.postgres_db import PostgresDB
 from utils.config import get_api_key
 
 st.set_page_config(
@@ -50,25 +50,34 @@ except ValueError as e:
     st.stop()
 
 # Initialize database
-db = P3Database()
+try:
+    db = PostgresDB()
+except Exception as e:
+    st.error(f"Failed to connect to PostgreSQL: {e}")
+    st.info("Please ensure DB_URL is set in your .env file")
+    st.stop()
 
 # Get statistics
-downloaded = db.get_episodes_by_status('downloaded')
-transcribed = db.get_episodes_by_status('transcribed')
-processed = db.get_episodes_by_status('processed')
-
-total_episodes = len(downloaded) + len(transcribed) + len(processed)
+try:
+    stats = db.get_stats()
+    downloaded_count = stats.get('downloaded_count', 0)
+    transcribed_count = stats.get('transcribed_count', 0)
+    processed_count = stats.get('processed_count', 0)
+    total_episodes = stats.get('total_podcasts', 0)
+except Exception as e:
+    st.warning(f"Could not load statistics: {e}")
+    downloaded_count = transcribed_count = processed_count = total_episodes = 0
 
 # Quick Stats at the top
 st.markdown("### 📊 Quick Stats")
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("📥 Downloaded", len(downloaded), help="Episodes downloaded but not transcribed")
+    st.metric("📥 Downloaded", downloaded_count, help="Episodes downloaded but not transcribed")
 with col2:
-    st.metric("🎯 Transcribed", len(transcribed), help="Episodes transcribed but not summarized")
+    st.metric("🎯 Transcribed", transcribed_count, help="Episodes transcribed but not summarized")
 with col3:
-    st.metric("✅ Processed", len(processed), help="Episodes fully processed")
+    st.metric("✅ Processed", processed_count, help="Episodes fully processed")
 with col4:
     st.metric("📊 Total", total_episodes, help="All episodes in database")
 
@@ -85,14 +94,14 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if len(downloaded) > 0:
-    st.info(f"✅ You have {len(downloaded)} episodes ready to transcribe!")
+if downloaded_count > 0:
+    st.info(f"✅ You have {downloaded_count} episodes ready to transcribe!")
     if st.button("🎯 Go to Process Episodes →", type="primary"):
         st.switch_page("pages/1_Process.py")
 else:
     st.warning("⚠️ No episodes downloaded yet. Start by downloading some episodes!")
     if st.button("📥 Go to Download →", type="primary"):
-        st.switch_page("pages/0_Download.py")
+        st.switch_page("pages/2_Download.py")
 
 # Step 2: Process
 st.markdown("""
@@ -102,8 +111,8 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if len(transcribed) > 0:
-    st.info(f"✅ You have {len(transcribed)} episodes ready to summarize!")
+if transcribed_count > 0:
+    st.info(f"✅ You have {transcribed_count} episodes ready to summarize!")
 
 # Step 3: View Results
 st.markdown("""
@@ -113,10 +122,10 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-if len(processed) > 0:
-    st.success(f"✅ You have {len(processed)} fully processed episodes!")
+if processed_count > 0:
+    st.success(f"✅ You have {processed_count} fully processed episodes!")
     if st.button("📊 View Results →"):
-        st.switch_page("pages/2_View_Data.py")
+        st.switch_page("pages/0_Podcasts.py")
 
 st.markdown("---")
 
@@ -129,19 +138,19 @@ with col1:
     st.markdown("""
     **Pipeline Steps:**
     1. 📥 **Download** → Fetch episodes from RSS feeds
-    2. 🎯 **Transcribe** → Convert audio to text (XAI Whisper)
-    3. 🧠 **Summarize** → Extract insights (XAI Grok)
-    4. 💾 **Store** → Save to DuckDB
-    5. 📄 **Export** → View and download results
+    2. 🎯 **Transcribe** → Convert audio to text (XAI/Groq Whisper)
+    3. 🧠 **Summarize** → Extract insights (XAI/Groq)
+    4. 💾 **Store** → Save to PostgreSQL
+    5. 📄 **View** → Browse transcripts and summaries
     """)
 
 with col2:
     st.markdown("""
     **Features:**
     - 🎧 Smart RSS feed management
-    - 🚀 XAI-powered transcription
+    - 🚀 AI-powered transcription
     - 🧠 AI summarization with topics & quotes
-    - 💾 Efficient DuckDB storage
+    - 💾 PostgreSQL storage
     - 📊 Interactive data viewing
     """)
 
@@ -149,9 +158,9 @@ with col2:
 if total_episodes > 0:
     st.markdown("### 📈 Processing Progress")
     
-    downloaded_pct = (len(downloaded) / total_episodes) * 100
-    transcribed_pct = (len(transcribed) / total_episodes) * 100
-    processed_pct = (len(processed) / total_episodes) * 100
+    downloaded_pct = (downloaded_count / total_episodes) * 100 if total_episodes > 0 else 0
+    transcribed_pct = (transcribed_count / total_episodes) * 100 if total_episodes > 0 else 0
+    processed_pct = (processed_count / total_episodes) * 100 if total_episodes > 0 else 0
     
     col1, col2, col3 = st.columns(3)
     
@@ -176,20 +185,20 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 📚 Quick Links")
-    st.page_link("pages/0_Download.py", label="📥 Download Episodes", icon="📥")
+    st.page_link("pages/0_Podcasts.py", label="🎙️ Podcasts", icon="🎙️")
     st.page_link("pages/1_Process.py", label="⚙️ Process Episodes", icon="⚙️")
-    st.page_link("pages/2_View_Data.py", label="📊 View Data", icon="📊")
+    st.page_link("pages/2_Download.py", label="📥 Download Episodes", icon="📥")
     
     st.markdown("---")
     
     st.markdown("### ℹ️ About")
     st.markdown("""
-    **Open Podcast Processor** automates podcast processing using XAI API.
+    **Open Podcast Processor** automates podcast processing using AI APIs.
     
     Built with:
     - Streamlit
-    - XAI API (Whisper + Grok)
-    - DuckDB
+    - XAI/Groq APIs (Whisper + LLM)
+    - PostgreSQL
     - FFmpeg
     """)
     

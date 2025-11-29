@@ -1,4 +1,24 @@
 feeds:
+  # Top Trading Podcasts (from FeedSpot top 10) - shorter episodes for testing
+  - name: "Stocks And Jocks"
+    url: "https://www.stocksandjocks.net/feed/podcast"
+    category: "trading"
+    
+  - name: "Top Traders Unplugged"
+    url: "https://toptradersunplugged.com/feed/podcast"
+    category: "trading"
+    
+  - name: "Chat With Traders"
+    url: "https://chatwithtraders.libsyn.com/rss"
+    category: "trading"
+    
+  - name: "Talking Wealth Podcast"
+    url: "https://feeds.feedburner.com/talkingwealth"
+    category: "trading"
+    
+  - name: "The Trading Coach Podcast"
+    url: "https://thetradingcoachpodcast.libsyn.com/rss"
+    category: "trading"
   # High-value business/investment podcasts
   - name: "Lenny's Podcast"
     url: "https://api.substack.com/feed/podcast/10845.rss"
@@ -43,16 +63,6 @@ settings:
   max_episodes_per_feed: 3
   cleanup_old_files: true
   cleanup_days: 30
-  
-  # Transcription
-  whisper_model: "base"  # tiny, base, small, medium, large
-  parakeet_enabled: true  # Use Parakeet MLX on Apple Silicon
-  parakeet_model: "mlx-community/parakeet-tdt-0.6b-v2"
-  
-  # LLM cleaning
-  llm_provider: "ollama"  # openai, anthropic, ollama
-  llm_model: "llama3.2:latest"  # For Ollama: llama3.2, qwen2.5, etc.
-  ollama_base_url: "http://localhost:11434"
   
   # Output
   export_format: ["markdown", "json"]

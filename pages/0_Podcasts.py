@@ -4,13 +4,10 @@ View processed podcasts with transcripts and statistics
 """
 
 import streamlit as st
-import pandas as pd
 import json
 from datetime import datetime
-from pathlib import Path
 
 from utils.postgres_db import PostgresDB
-from utils.config import get_db_url, get_db_schema
 
 st.set_page_config(page_title="Podcasts", page_icon="🎙️", layout="wide")
 
@@ -19,9 +16,20 @@ st.title("🎙️ Processed Podcasts")
 # Initialize PostgreSQL connection
 try:
     db = PostgresDB()
+    # Test connection by getting schema info
+    schema = db.schema
+    if schema and schema != 'public':
+        st.sidebar.info(f"📊 Using schema: `{schema}`")
+except ValueError as e:
+    st.error(f"Database configuration error: {e}")
+    st.info("Please ensure DB_URL is set in your .env file")
+    st.stop()
 except Exception as e:
     st.error(f"Failed to connect to PostgreSQL: {e}")
-    st.info("Please ensure DB_URL is set in your .env file")
+    st.info("Please ensure:")
+    st.info("1. DB_URL is set in your .env file")
+    st.info("2. PostgreSQL is running and accessible")
+    st.info("3. Database schema is initialized (run schema.sql)")
     st.stop()
 
 # Get statistics
@@ -58,9 +66,23 @@ with col1:
         index=0
     )
 with col2:
-    # Get unique feed names
-    all_pods = db.get_all_podcasts()
-    unique_feeds = sorted(set([p.get('podcast_feed_name') for p in all_pods if p.get('podcast_feed_name')]))
+    # Get unique feed names efficiently
+    try:
+        # Query distinct feed names directly from database
+        from sqlalchemy import text
+        with db.engine.connect() as conn:
+            schema_prefix = f"{db.schema}." if db.schema != 'public' else ""
+            result = conn.execute(text(
+                f"SELECT DISTINCT podcast_feed_name FROM {schema_prefix}podcasts "
+                f"WHERE podcast_feed_name IS NOT NULL ORDER BY podcast_feed_name"
+            ))
+            unique_feeds = [row[0] for row in result.fetchall()]
+    except Exception as e:
+        # Fallback: get from limited podcast list
+        st.warning(f"Could not fetch feed list: {e}")
+        limited_pods = db.get_all_podcasts(limit=100)
+        unique_feeds = sorted(set([p.get('podcast_feed_name') for p in limited_pods if p.get('podcast_feed_name')]))
+    
     feed_filter = st.selectbox(
         "Filter by Feed",
         ["All"] + unique_feeds,
@@ -83,7 +105,12 @@ if not podcasts:
     st.info("No podcasts found. Run batch processing to populate the database.")
     st.stop()
 
+# Count podcasts with transcripts
+podcasts_with_transcripts = sum(1 for p in podcasts if p.get('transcript') is not None)
+podcasts_with_summaries = sum(1 for p in podcasts if p.get('summary') is not None)
+
 st.subheader(f"📋 Podcasts ({len(podcasts)} found)")
+st.caption(f"📝 {podcasts_with_transcripts} with transcripts | 📊 {podcasts_with_summaries} with summaries")
 
 # Display podcasts in expanders
 for podcast in podcasts:
@@ -134,35 +161,162 @@ for podcast in podcasts:
         
         # Transcript
         transcript = podcast.get('transcript')
-        if transcript:
+        
+        if transcript is not None:
             st.subheader("📝 Transcript")
             
+            # Handle JSONB field - SQLAlchemy returns JSONB as dict when retrieved
+            # But handle both dict and string cases for robustness
             if isinstance(transcript, str):
-                transcript = json.loads(transcript)
+                try:
+                    transcript = json.loads(transcript)
+                except (json.JSONDecodeError, TypeError) as e:
+                    st.error(f"Could not parse transcript JSON: {e}")
+                    st.code(transcript[:500], language='text')
+                    transcript = {}
+            elif not isinstance(transcript, dict):
+                st.warning(f"Unexpected transcript type: {type(transcript)}")
+                st.code(str(transcript)[:500], language='text')
+                transcript = {}
             
-            transcript_text = transcript.get('text', '')
+            # Extract text and segments from transcript dict
+            # Expected structure: {'text': '...', 'segments': [...], 'language': 'en', ...}
+            transcript_text = ''
+            segments = []
+            
+            if isinstance(transcript, dict):
+                transcript_text = transcript.get('text', '') or ''
+                segments = transcript.get('segments', []) or []
+                
+                # If no text but we have segments, construct text from segments
+                if not transcript_text and segments:
+                    transcript_text = ' '.join([
+                        seg.get('text', '') 
+                        for seg in segments 
+                        if isinstance(seg, dict) and seg.get('text')
+                    ])
+            
             if transcript_text:
+                # Display transcript with word count
+                word_count = len(transcript_text.split())
+                st.caption(f"📊 {word_count:,} words | {len(transcript_text):,} characters")
+                
+                # Full transcript text area
                 st.text_area(
                     "Full Transcript",
                     transcript_text,
                     height=200,
                     key=f"transcript_{podcast_id}",
-                    disabled=True
+                    disabled=True,
+                    help="Complete transcript text"
                 )
             
-            segments = transcript.get('segments', [])
             if segments:
                 st.write(f"**Segments:** {len(segments)}")
                 
-                # Show first few segments
-                with st.expander("View Segments", expanded=False):
-                    for i, segment in enumerate(segments[:10]):  # Show first 10
-                        start = segment.get('start', 0)
-                        end = segment.get('end', 0)
-                        text = segment.get('text', '')
-                        st.write(f"**[{int(start)}s - {int(end)}s]** {text}")
-                    if len(segments) > 10:
-                        st.info(f"... and {len(segments) - 10} more segments")
+                # Segment visualization options
+                view_mode = st.radio(
+                    "View Mode",
+                    ["Timeline", "List", "Search"],
+                    key=f"view_mode_{podcast_id}",
+                    horizontal=True
+                )
+                
+                if view_mode == "Timeline":
+                    # Timeline view with better formatting
+                    with st.expander("📊 Timeline View", expanded=True):
+                        segment_limit = st.slider(
+                            "Show segments",
+                            min_value=10,
+                            max_value=min(len(segments), 100),
+                            value=min(50, len(segments)),
+                            key=f"timeline_limit_{podcast_id}"
+                        )
+                        
+                        for i, segment in enumerate(segments[:segment_limit]):
+                            start = segment.get('start', 0)
+                            end = segment.get('end', 0)
+                            text = segment.get('text', '').strip()
+                            speaker = segment.get('speaker', '')
+                            
+                            # Format timestamp
+                            def format_time(seconds):
+                                hours = int(seconds // 3600)
+                                minutes = int((seconds % 3600) // 60)
+                                secs = int(seconds % 60)
+                                if hours > 0:
+                                    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+                                return f"{minutes:02d}:{secs:02d}"
+                            
+                            time_str = f"{format_time(start)} - {format_time(end)}"
+                            
+                            # Display segment with styling
+                            if speaker:
+                                st.markdown(f"**{speaker}** [{time_str}]")
+                            else:
+                                st.markdown(f"**[{time_str}]**")
+                            st.markdown(f"<div style='margin-left: 20px; margin-bottom: 10px;'>{text}</div>", unsafe_allow_html=True)
+                        
+                        if len(segments) > segment_limit:
+                            st.info(f"... and {len(segments) - segment_limit} more segments")
+                
+                elif view_mode == "List":
+                    # Compact list view
+                    with st.expander("📋 List View", expanded=True):
+                        segment_limit = st.slider(
+                            "Show segments",
+                            min_value=10,
+                            max_value=min(len(segments), 100),
+                            value=min(50, len(segments)),
+                            key=f"list_limit_{podcast_id}"
+                        )
+                        
+                        for i, segment in enumerate(segments[:segment_limit]):
+                            start = segment.get('start', 0)
+                            end = segment.get('end', 0)
+                            text = segment.get('text', '').strip()
+                            speaker = segment.get('speaker', '')
+                            
+                            if speaker:
+                                st.write(f"**{speaker}** [{int(start)}s-{int(end)}s]: {text}")
+                            else:
+                                st.write(f"[{int(start)}s-{int(end)}s]: {text}")
+                        
+                        if len(segments) > segment_limit:
+                            st.info(f"... and {len(segments) - segment_limit} more segments")
+                
+                elif view_mode == "Search":
+                    # Search functionality
+                    search_term = st.text_input(
+                        "Search transcript",
+                        key=f"search_{podcast_id}",
+                        placeholder="Enter search term..."
+                    )
+                    
+                    if search_term:
+                        matching_segments = [
+                            seg for seg in segments
+                            if search_term.lower() in seg.get('text', '').lower()
+                        ]
+                        
+                        if matching_segments:
+                            st.success(f"Found {len(matching_segments)} matching segments")
+                            for segment in matching_segments:
+                                start = segment.get('start', 0)
+                                end = segment.get('end', 0)
+                                text = segment.get('text', '').strip()
+                                
+                                # Highlight search term
+                                highlighted_text = text.replace(
+                                    search_term,
+                                    f"**{search_term}**"
+                                )
+                                
+                                st.write(f"[{int(start)}s-{int(end)}s]: {highlighted_text}")
+                        else:
+                            st.info("No matching segments found")
+                    else:
+                        st.info("Enter a search term to find segments")
         else:
             st.info("No transcript available")
         
@@ -171,38 +325,58 @@ for podcast in podcasts:
         if summary:
             st.subheader("📊 Summary")
             
+            # Handle JSONB field - it may already be a dict or a string
             if isinstance(summary, str):
-                summary = json.loads(summary)
+                try:
+                    summary = json.loads(summary)
+                except (json.JSONDecodeError, TypeError):
+                    st.warning("Could not parse summary data")
+                    summary = {}
+            elif not isinstance(summary, dict):
+                summary = {}
             
             # Full summary text
-            summary_text = summary.get('summary', '')
+            summary_text = summary.get('summary', '') if isinstance(summary, dict) else ''
             if summary_text:
                 st.write(summary_text)
             
             # Key topics
-            key_topics = summary.get('key_topics', [])
+            key_topics = summary.get('key_topics', []) if isinstance(summary, dict) else []
             if key_topics:
                 st.write("**Key Topics:**")
-                st.write(", ".join([f"`{topic}`" for topic in key_topics]))
+                if isinstance(key_topics, list):
+                    st.write(", ".join([f"`{topic}`" for topic in key_topics if topic]))
+                else:
+                    st.write(str(key_topics))
             
             # Themes
-            themes = summary.get('themes', [])
+            themes = summary.get('themes', []) if isinstance(summary, dict) else []
             if themes:
                 st.write("**Themes:**")
-                st.write(", ".join([f"`{theme}`" for theme in themes]))
+                if isinstance(themes, list):
+                    st.write(", ".join([f"`{theme}`" for theme in themes if theme]))
+                else:
+                    st.write(str(themes))
             
             # Quotes
-            quotes = summary.get('quotes', [])
+            quotes = summary.get('quotes', []) if isinstance(summary, dict) else []
             if quotes:
                 st.write("**Notable Quotes:**")
-                for quote in quotes:
-                    st.write(f"> {quote}")
+                if isinstance(quotes, list):
+                    for quote in quotes:
+                        if quote:
+                            st.write(f"> {quote}")
+                else:
+                    st.write(str(quotes))
             
             # Startups/Companies
-            startups = summary.get('startups', [])
+            startups = summary.get('startups', []) if isinstance(summary, dict) else []
             if startups:
                 st.write("**Companies Mentioned:**")
-                st.write(", ".join([f"`{startup}`" for startup in startups]))
+                if isinstance(startups, list):
+                    st.write(", ".join([f"`{startup}`" for startup in startups if startup]))
+                else:
+                    st.write(str(startups))
         else:
             st.info("No summary available")
         

@@ -1,17 +1,18 @@
 """
 Batch download utility for demo purposes.
 Downloads 1 episode from each feed in config/feeds.yaml.
+Uses PostgreSQL and skips already downloaded episodes.
 """
 
 from typing import Dict, List, Optional
 from pathlib import Path
-from utils.database import P3Database
+from utils.postgres_db import PostgresDB
 from utils.downloader import PodcastDownloader
 from utils.download import load_feeds_config
 
 
 def batch_download_one_per_feed(
-    db: Optional[P3Database] = None,
+    db: Optional[PostgresDB] = None,
     data_dir: str = "data",
     config_path: Optional[Path] = None,
     audio_format: str = "mp3"
@@ -32,7 +33,7 @@ def batch_download_one_per_feed(
         }
     """
     if db is None:
-        db = P3Database()
+        db = PostgresDB()
         should_close = True
     else:
         should_close = False
@@ -85,10 +86,11 @@ def batch_download_one_per_feed(
                 count = downloader.process_feed(feed_url)
                 
                 # Get the downloaded episode info for this podcast
+                # Find episodes by feed_url (PostgreSQL doesn't have podcast_id)
                 episodes = db.get_episodes_by_status('downloaded')
                 feed_episodes = [
                     ep for ep in episodes 
-                    if ep.get('podcast_id') == podcast_id
+                    if ep.get('feed_url') == feed_url
                 ]
                 
                 episode_info = None
@@ -98,10 +100,10 @@ def batch_download_one_per_feed(
                     episode_info = {
                         'id': latest_episode['id'],
                         'title': latest_episode['title'],
-                        'url': latest_episode['url'],
-                        'file_path': latest_episode.get('file_path'),
+                        'url': latest_episode.get('episode_url') or latest_episode.get('url'),
+                        'file_path': latest_episode.get('audio_file_path') or latest_episode.get('file_path'),
                         'podcast_name': feed_name,
-                        'podcast_id': podcast_id
+                        'feed_url': feed_url
                     }
                     results['episodes'].append(episode_info)
                 

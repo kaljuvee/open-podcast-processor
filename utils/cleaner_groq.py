@@ -1,18 +1,19 @@
 """LLM-based transcript cleaning and summarization using Groq via LangChain."""
 
 import json
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 
-from utils.database import P3Database
+from utils.postgres_db import PostgresDB
 from utils.config import get_groq_api_key, get_groq_model, get_groq_temperature, get_groq_max_tokens
 
 
 class TranscriptCleaner:
-    def __init__(self, db: P3Database, api_key: str = None, model: str = None):
+    def __init__(self, db: PostgresDB, api_key: str = None, model: str = None):
         """
         Initialize Groq cleaner with LangChain.
         
@@ -89,18 +90,52 @@ Return ONLY valid JSON, no other text."""),
 
     def generate_summary(self, episode_id: int) -> Optional[Dict[str, Any]]:
         """Generate structured summary of an episode."""
+        summary_start = time.time()
+        
+        # Check if episode already has a summary
+        episode = self.db.get_episode_by_id(episode_id)
+        if not episode:
+            print(f"❌ Episode {episode_id} not found")
+            return None
+        
+        # Check if already processed/summarized
+        if episode.get('status') == 'processed':
+            if episode.get('summary'):
+                print(f"ℹ️  Episode {episode_id} already has a summary (status: processed)")
+                # Return existing summary
+                summary = episode.get('summary')
+                if isinstance(summary, dict):
+                    return summary
+                return None
+        
         # Get transcript segments
+        print(f"\n📊 Loading transcript from database...")
         segments = self.db.get_transcripts_for_episode(episode_id)
         full_text = "\n".join(segment['text'] for segment in segments)
         
         if not full_text.strip():
+            print(f"❌ No transcript text found for episode {episode_id}")
             return None
         
+        text_length = len(full_text)
+        word_count = len(full_text.split())
+        print(f"   Transcript loaded: {word_count:,} words ({text_length:,} characters)")
+        print(f"   Segments: {len(segments)}")
+        
+        # Estimate processing time
+        # Groq processes at roughly 100-200 tokens/second
+        # Estimate: ~4 chars per token, so ~400-800 chars/second
+        # Conservative: 500 chars/second
+        estimated_seconds = text_length / 500
+        print(f"   ⏱️  Estimated processing time: ~{int(estimated_seconds)}s")
+        
         # Generate structured summary using Groq
+        print(f"\n🧠 Generating summary with {self.model}...")
         summary_data = self._generate_structured_summary(full_text)
         
         if summary_data:
-            # Store in database
+            print(f"\n💾 Saving summary to PostgreSQL...")
+            # Store in PostgreSQL
             self.db.add_summary(
                 episode_id=episode_id,
                 key_topics=summary_data.get('key_topics', []),
@@ -113,6 +148,14 @@ Return ONLY valid JSON, no other text."""),
             
             # Update episode status
             self.db.update_episode_status(episode_id, 'processed')
+            
+            total_time = time.time() - summary_start
+            print(f"\n✅ Summary generated successfully!")
+            print(f"   Processing time: {int(total_time//60)}m{int(total_time%60)}s ({total_time:.1f}s)")
+            print(f"   Key topics: {len(summary_data.get('key_topics', []))}")
+            print(f"   Themes: {len(summary_data.get('themes', []))}")
+            print(f"   Quotes: {len(summary_data.get('quotes', []))}")
+            print(f"   Companies: {len(summary_data.get('startups', []))}")
         
         return summary_data
 
@@ -122,9 +165,13 @@ Return ONLY valid JSON, no other text."""),
             # Truncate text if too long (keep within context window)
             # llama-3.3-70b-versatile has 131k tokens, roughly 100k words
             max_chars = 500000  # ~100k words
+            original_length = len(text)
             if len(text) > max_chars:
-                print(f"Warning: Transcript too long ({len(text)} chars), truncating to {max_chars}")
+                print(f"   ⚠️  Transcript too long ({len(text):,} chars), truncating to {max_chars:,}")
                 text = text[:max_chars] + "... [truncated]"
+            
+            print(f"   📤 Sending request to Groq API ({self.model})...")
+            api_start = time.time()
             
             # Create chain: prompt -> llm -> parser
             chain = self.prompt | self.llm | self.parser
@@ -132,12 +179,21 @@ Return ONLY valid JSON, no other text."""),
             # Invoke chain
             result = chain.invoke({"transcript": text})
             
+            api_time = time.time() - api_start
+            print(f"   ✅ API response received ({api_time:.1f}s)")
+            
+            # Estimate token usage (rough: 4 chars per token)
+            input_tokens = len(text) / 4
+            output_tokens = len(str(result)) / 4
+            print(f"   📊 Estimated tokens: {int(input_tokens):,} input, {int(output_tokens):,} output")
+            
             return result
             
         except Exception as e:
-            print(f"Groq summarization failed: {e}")
+            print(f"   ❌ Groq summarization failed: {e}")
             import traceback
             traceback.print_exc()
+            print(f"   🔄 Falling back to basic extraction...")
             return self._basic_extraction(text)
 
     def _basic_extraction(self, text: str) -> Dict[str, Any]:

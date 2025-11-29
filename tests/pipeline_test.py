@@ -6,11 +6,14 @@ Tests: Download -> Transcribe -> Summarize
 
 import sys
 from pathlib import Path
-from utils.database import P3Database
+
+# Add parent directory to path so we can import utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from utils.postgres_db import PostgresDB
 from utils.download import load_feeds_config
 from utils.downloader import PodcastDownloader
 from utils.processing import transcribe_episode, summarize_episode
-from utils.postgres_db import PostgresDB
 
 
 def test_database_connection():
@@ -20,28 +23,22 @@ def test_database_connection():
     print("="*60)
     
     try:
-        # Test DuckDB connection
-        print("\n[1.1] Testing DuckDB connection...")
-        db = P3Database()
-        print("✓ DuckDB connection successful")
-        
         # Test PostgreSQL connection
-        print("\n[1.2] Testing PostgreSQL connection...")
-        pg_db = PostgresDB()
+        print("\n[1.1] Testing PostgreSQL connection...")
+        db = PostgresDB()
         print("✓ PostgreSQL connection successful")
         
         # Initialize PostgreSQL schema if needed
-        print("\n[1.3] Initializing PostgreSQL schema...")
-        schema_path = Path(__file__).parent / "sql" / "schema.sql"
+        print("\n[1.2] Initializing PostgreSQL schema...")
+        schema_path = Path(__file__).parent.parent / "sql" / "schema.sql"
         if schema_path.exists():
-            pg_db.execute_sql_file(str(schema_path))
+            db.execute_sql_file(str(schema_path))
             print("✓ PostgreSQL schema initialized")
         else:
             print("⚠️  Schema file not found, skipping schema initialization")
         
         db.close()
-        pg_db.close()
-        print("\n✅ TEST 1 PASSED: Database connections working")
+        print("\n✅ TEST 1 PASSED: Database connection working")
         return True
     except Exception as e:
         print(f"\n❌ TEST 1 FAILED: {e}")
@@ -76,7 +73,7 @@ def test_download_one_episode():
         
         # Initialize database and downloader
         print("\n[2.2] Initializing downloader...")
-        db = P3Database()
+        db = PostgresDB()
         downloader = PodcastDownloader(
             db=db,
             data_dir="data",
@@ -86,7 +83,7 @@ def test_download_one_episode():
         
         # Add feed to database (or get existing)
         print("\n[2.3] Adding feed to database...")
-        existing_podcast = db.get_podcast_by_url(feed_url)
+        existing_podcast = db.get_podcast_by_feed_url(feed_url)
         if existing_podcast:
             podcast_id = existing_podcast['id']
             print(f"✓ Feed already exists (ID: {podcast_id})")
@@ -108,25 +105,32 @@ def test_download_one_episode():
             return None
         
         episode_data = episodes[0]
+        episode_url = episode_data['url']
         print(f"✓ Found episode: {episode_data['title']}")
         
-        # Check if episode already exists
-        if db.episode_exists(episode_data['url']):
-            print("\n⚠️  Episode already exists, fetching existing episode...")
-            # Get existing episode
-            all_episodes = db.get_episodes_by_status('downloaded')
-            episode = next((e for e in all_episodes if e['url'] == episode_data['url']), None)
-            if episode:
-                print(f"✓ Using existing episode (ID: {episode['id']})")
+        # Check if episode already exists in database
+        existing_episode = db.get_podcast_by_url(episode_url)
+        if existing_episode:
+            print("\n⚠️  Episode already exists in database, checking file...")
+            file_path = existing_episode.get('audio_file_path') or existing_episode.get('file_path')
+            
+            # Check if file exists on disk
+            if file_path and Path(file_path).exists():
+                print(f"✓ Using existing episode (ID: {existing_episode['id']})")
+                print(f"   File: {file_path}")
+                print(f"   Status: {existing_episode.get('status', 'unknown')}")
                 db.close()
-                return episode
+                return existing_episode
+            else:
+                print(f"⚠️  Episode in database but file missing: {file_path}")
+                print("   Will re-download...")
         
         # Download episode
         print("\n[2.5] Downloading episode...")
         safe_title = "".join(c for c in episode_data['title'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
         filename = f"{podcast_id}_{safe_title[:50]}"
         
-        file_path = downloader.download_episode(episode_data['url'], filename)
+        file_path = downloader.download_episode(episode_url, filename)
         
         if not file_path:
             print("❌ Failed to download episode")
@@ -135,25 +139,35 @@ def test_download_one_episode():
         
         print(f"✓ Episode downloaded to: {file_path}")
         
-        # Add to database
+        # Add to database (or update if exists)
         print("\n[2.6] Saving episode to database...")
-        episode_id = db.add_episode(
-            podcast_id=podcast_id,
+        # Calculate file size
+        file_size_bytes = None
+        if Path(file_path).exists():
+            file_size_bytes = Path(file_path).stat().st_size
+        
+        episode_id = db.save_podcast(
             title=episode_data['title'],
-            date=episode_data['date'],
-            url=episode_data['url'],
-            file_path=file_path
+            description=episode_data.get('description'),
+            feed_url=feed_url,
+            episode_url=episode_url,
+            published_at=episode_data['date'],
+            audio_file_path=file_path,
+            file_size_bytes=file_size_bytes,
+            status='downloaded',
+            podcast_feed_name=feed_name,
+            podcast_category=feed_config.get('category', 'general')
         )
         print(f"✓ Episode saved (ID: {episode_id})")
         
         # Get episode info
-        episode = db.get_episode_by_id(episode_id)
+        episode = db.get_podcast_by_id(episode_id)
         db.close()
         
         print("\n✅ TEST 2 PASSED: Episode downloaded successfully")
         print(f"   Episode ID: {episode_id}")
         print(f"   Title: {episode['title']}")
-        print(f"   File: {episode['file_path']}")
+        print(f"   File: {episode.get('audio_file_path') or episode.get('file_path')}")
         
         return episode
         
@@ -180,7 +194,7 @@ def test_transcribe_episode(episode):
         print(f"      Title: {episode['title']}")
         
         # Initialize database
-        db = P3Database()
+        db = PostgresDB()
         
         # Check episode status
         episode_check = db.get_episode_by_id(episode_id)
@@ -189,20 +203,28 @@ def test_transcribe_episode(episode):
             db.close()
             return None
         
-        print(f"      Status: {episode_check['status']}")
-        print(f"      File: {episode_check['file_path']}")
+        # Check if already transcribed
+        if episode_check.get('status') == 'transcribed' or episode_check.get('status') == 'processed':
+            print(f"⚠️  Episode already transcribed (status: {episode_check.get('status')})")
+            print("   Skipping transcription...")
+            db.close()
+            return episode_check
         
-        # Transcribe
+        print(f"      Status: {episode_check['status']}")
+        file_path = episode_check.get('audio_file_path') or episode_check.get('file_path')
+        print(f"      File: {file_path}")
+        
+        # Transcribe (detailed output is handled by transcriber)
         print("\n[3.2] Starting transcription...")
         success, error = transcribe_episode(episode_id, db)
         
         if not success:
-            print(f"❌ Transcription failed: {error}")
+            print(f"\n❌ Transcription failed: {error}")
             db.close()
             return None
         
         # Verify transcription
-        print("\n[3.3] Verifying transcription...")
+        print("\n[3.3] Verifying transcription results...")
         episode_updated = db.get_episode_by_id(episode_id)
         
         if episode_updated['status'] != 'transcribed':
@@ -211,12 +233,12 @@ def test_transcribe_episode(episode):
         transcripts = db.get_transcripts_for_episode(episode_id)
         transcript_count = len(transcripts)
         
-        print(f"✓ Transcription complete")
+        print(f"✓ Verification complete:")
         print(f"  Status: {episode_updated['status']}")
         print(f"  Transcript segments: {transcript_count}")
         
         if transcripts:
-            print(f"  First segment: {transcripts[0]['text'][:100]}...")
+            print(f"  Sample segment: {transcripts[0]['text'][:100]}...")
         
         db.close()
         
@@ -246,7 +268,7 @@ def test_summarize_episode(episode):
         print(f"      Title: {episode['title']}")
         
         # Initialize database
-        db = P3Database()
+        db = PostgresDB()
         
         # Check episode status
         episode_check = db.get_episode_by_id(episode_id)
@@ -254,6 +276,14 @@ def test_summarize_episode(episode):
             print(f"❌ Episode {episode_id} not found in database")
             db.close()
             return None
+        
+        # Check if already processed
+        if episode_check.get('status') == 'processed':
+            if episode_check.get('summary'):
+                print(f"⚠️  Episode already processed (status: processed)")
+                print("   Skipping summarization...")
+                db.close()
+                return episode_check
         
         print(f"      Status: {episode_check['status']}")
         
@@ -273,9 +303,8 @@ def test_summarize_episode(episode):
         if episode_updated['status'] != 'processed':
             print(f"⚠️  Status is '{episode_updated['status']}', expected 'processed'")
         
-        # Get summary from database
-        summaries = db.get_summaries_by_date(episode_check['date']) if episode_check.get('date') else []
-        episode_summary = next((s for s in summaries if s['episode_id'] == episode_id), None)
+        # Get summary from database (PostgreSQL stores summary in episode record)
+        episode_summary = episode_updated.get('summary')
         
         if episode_summary:
             print(f"✓ Summarization complete")

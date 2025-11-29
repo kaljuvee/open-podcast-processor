@@ -1,5 +1,7 @@
 -- PostgreSQL schema for Open Podcast Processor
 -- Stores processed podcast data with transcripts and summaries
+-- Note: Tables are created in the schema specified by DB_SCHEMA env var (default: public)
+-- If using a custom schema (e.g., 'opp'), ensure the schema exists first
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -66,8 +68,14 @@ CREATE OR REPLACE VIEW podcast_stats AS
 SELECT 
     COUNT(*) as total_podcasts,
     COUNT(*) FILTER (WHERE status = 'downloaded') as downloaded_count,
-    COUNT(*) FILTER (WHERE status = 'transcribed') as transcribed_count,
-    COUNT(*) FILTER (WHERE status = 'processed') as processed_count,
+    COUNT(*) FILTER (
+        WHERE transcript IS NOT NULL 
+        AND jsonb_typeof(transcript) = 'object'
+    ) as transcribed_count,
+    COUNT(*) FILTER (
+        WHERE summary IS NOT NULL 
+        AND jsonb_typeof(summary) = 'object'
+    ) as processed_count,
     COUNT(*) FILTER (WHERE status = 'failed') as failed_count,
     COUNT(DISTINCT podcast_feed_name) as unique_feeds,
     AVG(duration_seconds) as avg_duration_seconds,

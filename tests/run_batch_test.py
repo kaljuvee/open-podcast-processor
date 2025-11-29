@@ -11,7 +11,7 @@ from datetime import datetime
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.database import P3Database
+from utils.postgres_db import PostgresDB
 from utils.batch_download import batch_download_one_per_feed
 from utils.batch_process import batch_transcribe_downloaded, batch_summarize_transcribed, batch_process_all
 
@@ -32,14 +32,13 @@ def run_batch_demo(skip_download=False, process_all_downloaded=False):
     print("Using Groq models via LangChain for summarization")
     print()
     
-    # Use demo database
-    demo_db_path = "db/demo.duckdb"
-    db = P3Database(db_path=demo_db_path)
+    # Use PostgreSQL database
+    db = PostgresDB()
     
     results = {
         'test_name': 'batch_demo',
         'timestamp': datetime.now().isoformat(),
-        'database_path': demo_db_path
+        'database': 'PostgreSQL'
     }
     
     try:

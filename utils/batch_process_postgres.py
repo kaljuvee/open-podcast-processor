@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from utils.database import P3Database
 from utils.postgres_db import PostgresDB
-from utils.processing import transcribe_episode, summarize_episode
 from utils.transcriber_groq import AudioTranscriber
 from utils.cleaner_groq import TranscriptCleaner
 from utils.config import get_groq_api_key
@@ -144,14 +143,47 @@ def process_and_save_to_postgres(
     for episode in episodes_to_process:
         episode_id = episode['id']
         episode_title = episode.get('title', f'Episode {episode_id}')
+        episode_url = episode.get('url')
+        
+        # Check if episode already exists in PostgreSQL
+        if episode_url:
+            existing_postgres = postgres.get_podcast_by_url(episode_url)
+            if existing_postgres:
+                existing_status = existing_postgres.get('status')
+                if existing_status == 'processed':
+                    print(f"  ⏭️  Skipping {episode_title[:60]}... (already processed in PostgreSQL)")
+                    results['saved_to_postgres'] += 1
+                    continue
+                elif existing_status == 'transcribed':
+                    print(f"  ⏭️  Skipping transcription for {episode_title[:60]}... (already transcribed in PostgreSQL)")
+                    # Still need to summarize if not processed
+                    if not existing_postgres.get('summary'):
+                        print(f"  Summarizing: {episode_title[:60]}...")
+                        # Get transcript from DuckDB for summarization
+                        segments = duckdb.get_transcripts_for_episode(episode_id)
+                        if segments:
+                            summary = cleaner.generate_summary(episode_id)
+                            if summary:
+                                # Update PostgreSQL with summary
+                                postgres.update_podcast(
+                                    podcast_id=existing_postgres['id'],
+                                    status='processed',
+                                    summary=summary
+                                )
+                                results['summarized'] += 1
+                                results['saved_to_postgres'] += 1
+                                print(f"    ✓ Summary added to PostgreSQL")
+                            else:
+                                results['errors'] += 1
+                        continue
         
         try:
             # Step 1: Transcribe
             print(f"  Transcribing: {episode_title[:60]}...")
-            success, error = transcribe_episode(episode_id, duckdb)
+            success = transcriber.transcribe_episode(episode_id)
             
             if not success:
-                print(f"    ✗ Transcription failed: {error}")
+                print(f"    ✗ Transcription failed")
                 results['errors'] += 1
                 continue
             
@@ -167,10 +199,10 @@ def process_and_save_to_postgres(
             
             # Step 2: Summarize
             print(f"  Summarizing: {episode_title[:60]}...")
-            success, error, summary = summarize_episode(episode_id, duckdb)
+            summary = cleaner.generate_summary(episode_id)
             
-            if not success:
-                print(f"    ✗ Summarization failed: {error}")
+            if not summary:
+                print(f"    ✗ Summarization failed")
                 results['errors'] += 1
             else:
                 results['summarized'] += 1
