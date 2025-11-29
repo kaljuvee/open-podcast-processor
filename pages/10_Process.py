@@ -2,19 +2,23 @@
 Process Episodes Page
 Smart interface for transcribing and summarizing episodes
 Automatically detects podcasts without transcripts
+Combines transcription and summarization into one step with progress logging
 """
 
 import streamlit as st
 import json
+import time
 from pathlib import Path
+from datetime import datetime, timedelta
 from utils.postgres_db import PostgresDB
 from utils.config import get_groq_api_key
 from utils.processing import transcribe_episode, summarize_episode
+from utils.streamlit_logger import capture_output
 
 st.set_page_config(page_title="Process Episodes", page_icon="⚙️", layout="wide")
 
 st.title("⚙️ Process Episodes")
-st.markdown("**Step 2**: Transcribe and summarize your downloaded episodes")
+st.markdown("**Step 2**: Transcribe and summarize your downloaded episodes in one step")
 
 # Check API key
 try:
@@ -33,55 +37,13 @@ except Exception as e:
     st.stop()
 
 # Smart detection: Find podcasts without transcripts
-def get_podcasts_needing_transcription():
-    """Get podcasts that need transcription (downloaded but no transcript)."""
+def get_podcasts_needing_processing():
+    """Get podcasts that need processing (downloaded but not fully processed)."""
     all_podcasts = db.get_all_podcasts(status=None, limit=1000)
     
-    needs_transcription = []
+    needs_processing = []
     for podcast in all_podcasts:
-        # Check if status is 'downloaded' or if transcript is missing/invalid
         status = podcast.get('status', 'unknown')
-        transcript = podcast.get('transcript')
-        
-        # Check if transcript exists and has content
-        has_transcript = False
-        if transcript:
-            if isinstance(transcript, dict):
-                transcript_text = transcript.get('text', '')
-                segments = transcript.get('segments', [])
-                if transcript_text or (segments and len(segments) > 0):
-                    has_transcript = True
-            elif isinstance(transcript, str):
-                try:
-                    transcript_dict = json.loads(transcript)
-                    if isinstance(transcript_dict, dict):
-                        transcript_text = transcript_dict.get('text', '')
-                        segments = transcript_dict.get('segments', [])
-                        if transcript_text or (segments and len(segments) > 0):
-                            has_transcript = True
-                except:
-                    pass
-        
-        # Need transcription if: status is downloaded OR no valid transcript
-        if status == 'downloaded' or (status != 'failed' and not has_transcript):
-            # Check if audio file exists
-            audio_file = podcast.get('audio_file_path')
-            if audio_file:
-                try:
-                    if Path(audio_file).exists():
-                        needs_transcription.append(podcast)
-                except:
-                    # If path is invalid, skip
-                    pass
-    
-    return needs_transcription
-
-def get_podcasts_needing_summarization():
-    """Get podcasts that need summarization (transcribed but no summary)."""
-    all_podcasts = db.get_all_podcasts(status=None, limit=1000)
-    
-    needs_summarization = []
-    for podcast in all_podcasts:
         transcript = podcast.get('transcript')
         summary = podcast.get('summary')
         
@@ -97,9 +59,8 @@ def get_podcasts_needing_summarization():
                 try:
                     transcript_dict = json.loads(transcript)
                     if isinstance(transcript_dict, dict):
-                        transcript_text = transcript_dict.get('text', '')
-                        segments = transcript_dict.get('segments', [])
-                        if transcript_text or (segments and len(segments) > 0):
+                        transcript_text = transcript_dict.get('text', '') or transcript_dict.get('segments', [])
+                        if transcript_text or (isinstance(transcript_dict, dict) and transcript_dict.get('segments')):
                             has_transcript = True
                 except:
                     pass
@@ -108,8 +69,8 @@ def get_podcasts_needing_summarization():
         has_summary = False
         if summary:
             if isinstance(summary, dict):
-                summary_text = summary.get('summary', '')
-                key_topics = summary.get('key_topics', [])
+                summary_text = summary.get('summary', '') if isinstance(summary, dict) else ''
+                key_topics = summary.get('key_topics', []) if isinstance(summary, dict) else []
                 if summary_text or key_topics:
                     has_summary = True
             elif isinstance(summary, str):
@@ -123,15 +84,25 @@ def get_podcasts_needing_summarization():
                 except:
                     pass
         
-        # Need summarization if: has transcript but no summary
-        if has_transcript and not has_summary:
-            needs_summarization.append(podcast)
+        # Need processing if: no transcript OR (has transcript but no summary)
+        if not has_transcript or (has_transcript and not has_summary):
+            # Check if audio file exists
+            audio_file = podcast.get('audio_file_path')
+            if audio_file:
+                try:
+                    if Path(audio_file).exists():
+                        needs_processing.append({
+                            'podcast': podcast,
+                            'needs_transcription': not has_transcript,
+                            'needs_summarization': has_transcript and not has_summary
+                        })
+                except:
+                    pass
     
-    return needs_summarization
+    return needs_processing
 
 # Get podcasts needing processing
-podcasts_needing_transcription = get_podcasts_needing_transcription()
-podcasts_needing_summarization = get_podcasts_needing_summarization()
+podcasts_needing_processing = get_podcasts_needing_processing()
 
 # Status overview
 st.markdown("### 📊 Processing Status")
@@ -139,20 +110,21 @@ st.markdown("### 📊 Processing Status")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("📥 Need Transcription", len(podcasts_needing_transcription), 
-              help="Downloaded episodes without transcripts")
+    needs_transcription = sum(1 for p in podcasts_needing_processing if p['needs_transcription'])
+    st.metric("📥 Need Processing", len(podcasts_needing_processing), 
+              help="Episodes needing transcription and/or summarization")
 with col2:
-    st.metric("🎯 Need Summarization", len(podcasts_needing_summarization),
-              help="Transcribed episodes without summaries")
-with col3:
     processed = db.get_all_podcasts(status='processed', limit=1000)
     st.metric("✅ Fully Processed", len(processed),
               help="Episodes with transcripts and summaries")
+with col3:
+    st.metric("🎯 Ready to process", needs_transcription,
+              help="Episodes ready for processing")
 
 st.markdown("---")
 
 # Main processing interface
-if len(podcasts_needing_transcription) == 0 and len(podcasts_needing_summarization) == 0:
+if len(podcasts_needing_processing) == 0:
     st.success("✅ All episodes are processed!")
     st.info("All downloaded episodes have transcripts and summaries.")
     if st.button("📥 Download More Episodes →", type="primary"):
@@ -160,34 +132,24 @@ if len(podcasts_needing_transcription) == 0 and len(podcasts_needing_summarizati
     st.stop()
 
 # Smart processing
-st.markdown("### 🚀 Process Episodes")
+st.markdown("### 🚀 Process All Episodes (One Step)")
 
-if len(podcasts_needing_transcription) > 0:
-    st.info(f"📥 Found {len(podcasts_needing_transcription)} episode(s) that need transcription")
+if len(podcasts_needing_processing) > 0:
+    st.info(f"📥 Found {len(podcasts_needing_processing)} episode(s) that need processing")
     
-    # Show list of episodes needing transcription
-    with st.expander(f"📋 Episodes Needing Transcription ({len(podcasts_needing_transcription)})", expanded=False):
-        for pod in podcasts_needing_transcription[:10]:  # Show first 10
-            st.write(f"- {pod.get('title', 'Unknown')[:70]}...")
-        if len(podcasts_needing_transcription) > 10:
-            st.caption(f"... and {len(podcasts_needing_transcription) - 10} more")
-
-if len(podcasts_needing_summarization) > 0:
-    st.info(f"🎯 Found {len(podcasts_needing_summarization)} episode(s) that need summarization")
-    
-    # Show list of episodes needing summarization
-    with st.expander(f"📋 Episodes Needing Summarization ({len(podcasts_needing_summarization)})", expanded=False):
-        for pod in podcasts_needing_summarization[:10]:  # Show first 10
-            st.write(f"- {pod.get('title', 'Unknown')[:70]}...")
-        if len(podcasts_needing_summarization) > 10:
-            st.caption(f"... and {len(podcasts_needing_summarization) - 10} more")
+    # Show list of episodes needing processing
+    with st.expander(f"📋 Episodes Needing Processing ({len(podcasts_needing_processing)})", expanded=False):
+        for p in podcasts_needing_processing[:10]:
+            st.write(f"- {p['podcast'].get('title', 'Unknown')[:70]}...")
+        if len(podcasts_needing_processing) > 10:
+            st.caption(f"... and {len(podcasts_needing_processing) - 10} more")
 
 st.info("""
-This will:
-1. **Transcribe** all episodes without transcripts (converts audio to text)
-2. **Summarize** all transcribed episodes without summaries (extracts insights with AI)
+This will process all episodes in one step:
+1. **Transcribe** episodes without transcripts (converts audio to text)
+2. **Summarize** transcribed episodes without summaries (extracts insights with AI)
 
-Processing time: ~1-2 minutes per episode
+Estimated time: ~2-3 minutes per episode
 """)
 
 # Check ffmpeg availability
@@ -199,8 +161,6 @@ if not ffmpeg_available:
     st.caption("ffmpeg is optional but recommended for better transcription quality.")
 else:
     st.success(f"✅ **ffmpeg available** - Audio normalization enabled")
-    if ffmpeg_info:
-        st.caption(f"Version: {ffmpeg_info[:50]}...")
 
 st.markdown("---")
 
@@ -210,99 +170,135 @@ if st.button("⚙️ Process All Episodes Now", type="primary", use_container_wi
     status_text = st.empty()
     results_container = st.container()
     
+    # Create debug log container
+    debug_expander = st.expander("🔍 Debug Logs", expanded=True)
+    debug_container = debug_expander.container()
+    debug_container.info("📋 Processing episodes with progress logging...")
+    
     try:
-        # Step 1: Transcription
-        status_text.info("🎙️ Step 1/2: Transcribing episodes...")
+        # Combine transcription and summarization into one step
+        status_text.info("🎙️ Processing all episodes in one step...")
         overall_progress.progress(0.1)
         
-        total_to_transcribe = len(podcasts_needing_transcription)
-        transcribed_count = 0
-        transcription_errors = 0
+        total_to_process = len(podcasts_needing_processing)
+        processed_count = 0
+        transcription_count = 0
+        summarization_count = 0
+        errors = 0
+        start_time = time.time()
         
-        if total_to_transcribe > 0:
-            transcription_progress = st.progress(0)
-            transcription_status = st.empty()
+        # Capture console output
+        with capture_output(container=debug_container, display=True, max_lines=200):
             
-            for idx, episode in enumerate(podcasts_needing_transcription):
-                episode_title = episode['title'][:50] + "..." if len(episode['title']) > 50 else episode['title']
-                transcription_status.info(f"Transcribing {idx + 1}/{total_to_transcribe}: {episode_title}")
-                transcription_progress.progress((idx + 1) / total_to_transcribe)
+            for idx, item in enumerate(podcasts_needing_processing):
+                podcast = item['podcast']
+                needs_transcription = item['needs_transcription']
+                needs_summarization = item['needs_summarization']
                 
-                success, error = transcribe_episode(episode['id'], db)
-                if success:
-                    transcribed_count += 1
-                else:
-                    transcription_errors += 1
-                    st.warning(f"⚠️ Failed: {episode_title} - {error}")
-            
-            transcription_progress.progress(1.0)
-            transcription_status.success(f"✅ Transcribed {transcribed_count}/{total_to_transcribe} episodes")
-        else:
-            st.info("ℹ️ No episodes to transcribe")
-        
-        overall_progress.progress(0.5)
-        
-        # Refresh list after transcription
-        podcasts_needing_summarization = get_podcasts_needing_summarization()
-        
-        # Step 2: Summarization
-        status_text.info("🧠 Step 2/2: Summarizing episodes...")
-        
-        total_to_summarize = len(podcasts_needing_summarization)
-        summarized_count = 0
-        summarization_errors = 0
-        
-        if total_to_summarize > 0:
-            summarization_progress = st.progress(0)
-            summarization_status = st.empty()
-            
-            for idx, episode in enumerate(podcasts_needing_summarization):
-                episode_title = episode['title'][:50] + "..." if len(episode['title']) > 50 else episode['title']
-                summarization_status.info(f"Summarizing {idx + 1}/{total_to_summarize}: {episode_title}")
-                summarization_progress.progress((idx + 1) / total_to_summarize)
+                episode_id = podcast['id']
+                episode_title = podcast['title'][:50] + "..." if len(podcast['title']) > 50 else podcast['title']
                 
-                success, error, summary = summarize_episode(episode['id'], db)
-                if success:
-                    summarized_count += 1
+                # Calculate progress
+                progress = (idx + 1) / total_to_process
+                overall_progress.progress(progress)
+                
+                # Calculate estimated time remaining
+                elapsed_time = time.time() - start_time
+                if idx > 0:
+                    avg_time_per_episode = elapsed_time / idx
+                    remaining_episodes = total_to_process - idx
+                    estimated_remaining = timedelta(seconds=int(avg_time_per_episode * remaining_episodes))
+                    status_text.info(
+                        f"🎙️ Processing {idx + 1}/{total_to_process}: {episode_title} "
+                        f"(Estimated remaining: {estimated_remaining.total_seconds():.0f}s)"
+                    )
                 else:
-                    summarization_errors += 1
-                    st.warning(f"⚠️ Failed: {episode_title} - {error}")
-            
-            summarization_progress.progress(1.0)
-            summarization_status.success(f"✅ Summarized {summarized_count}/{total_to_summarize} episodes")
-        else:
-            st.info("ℹ️ No episodes to summarize")
+                    status_text.info(f"🎙️ Processing {idx + 1}/{total_to_process}: {episode_title}")
+                    print(f"  Processing episode {idx + 1}/{total_to_process}: {episode_title}")
+                
+                # Step 1: Transcribe if needed
+                if needs_transcription:
+                    print(f"\n[{idx + 1}/{total_to_process}] TRANSCRIBING: {episode_title}")
+                    print(f"  Transcribing episode {idx + 1}/{total_to_process}: {episode_title}")
+                    
+                    transcription_start = time.time()
+                    print(f"  🎙️ Transcribing episode {idx + 1}/{total_to_process}: {episode_title}...")
+                    
+                    success, error = transcribe_episode(episode_id, db)
+                    transcription_time = time.time() - transcription_start
+                    
+                    if success:
+                        transcription_count += 1
+                        print(f"  ✅ Transcribed episode {idx + 1}/{total_to_process}: {episode_title} ({transcription_time:.1f}s)")
+                    else:
+                        errors += 1
+                        print(f"  ❌ Transcription failed: {episode_title} - {error}")
+                        st.warning(f"⚠️ Failed: {episode_title} - {error}")
+                
+                # Step 2: Summarize if needed (refresh list after transcription)
+                if needs_summarization or (needs_transcription and success):
+                    # Refresh podcast to get updated status
+                    updated_podcast = db.get_episode_by_id(episode_id)
+                    updated_summary = updated_podcast.get('summary') if updated_podcast else None
+                    
+                    if not updated_summary or (isinstance(updated_summary, dict) and not updated_summary.get('summary') and not updated_summary.get('key_topics')):
+                        print(f"  🧠 Summarizing episode {idx + 1}/{total_to_process}: {episode_title}...")
+                        
+                        summarization_start = time.time()
+                        success_summary, error_summary, summary = summarize_episode(episode_id, db)
+                        summarization_time = time.time() - summarization_start
+                        
+                        if success_summary:
+                            summarization_count += 1
+                            print(f"  ✅ Summarized episode {idx + 1}/{total_to_process}: {episode_title} ({summarization_time:.1f}s)")
+                        else:
+                            errors += 1
+                            print(f"  ❌ Summarization failed: {episode_title} - {error_summary}")
+                            st.warning(f"⚠️ Failed: {episode_title} - {error_summary}")
+                    else:
+                        print(f"  ⏭️  Skipping summarization (already processed): {episode_title}")
+                
+                processed_count += 1
+                
+                # Update progress
+                elapsed_total = time.time() - start_time
+                if idx < total_to_process - 1:
+                    avg_time = elapsed_total / (idx + 1)
+                    remaining = total_to_process - idx - 1
+                    eta = timedelta(seconds=int(avg_time * remaining))
+                    status_text.success(f"✅ Processed {idx + 1}/{total_to_process}: {episode_title} (ETA: {eta.total_seconds():.0f}s remaining)")
         
         overall_progress.progress(1.0)
-        status_text.success("✅ Processing complete!")
+        total_time = time.time() - start_time
         
         # Display results
         with results_container:
             st.markdown("### 📊 Processing Results")
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("✅ Transcribed", transcribed_count, 
-                         delta=f"{transcription_errors} errors" if transcription_errors > 0 else None)
+                st.metric("✅ Processed", processed_count, 
+                         delta=f"{total_time:.1f}s total" if total_time > 0 else None)
             with col2:
-                st.metric("✅ Summarized", summarized_count,
-                         delta=f"{summarization_errors} errors" if summarization_errors > 0 else None)
+                st.metric("🎙️ Transcribed", transcription_count,
+                         delta=f"{errors} errors" if errors > 0 else None)
             with col3:
-                total_errors = transcription_errors + summarization_errors
-                st.metric("⚠️ Errors", total_errors)
+                st.metric("🧠 Summarized", summarization_count,
+                         delta=f"{errors} errors" if errors > 0 else None)
+            with col4:
+                st.metric("⚠️ Errors", errors)
             
             # Show next step
             st.markdown("---")
             st.markdown("### ✅ Processing Complete!")
-            total_processed = transcribed_count + summarized_count
-            st.success(f"🎉 Successfully processed {total_processed} episodes!")
+            st.success(f"🎉 Successfully processed {processed_count} episodes in {total_time:.1f}s")
             
             if st.button("📊 View Results →", type="primary", key="view_results"):
                 st.switch_page("pages/0_Podcasts.py")
     
     except Exception as e:
         overall_progress.progress(1.0)
-        status_text.error("❌ Processing failed")
+        status_text.success("✅ Processing complete!")
         st.error(f"❌ Processing failed: {str(e)}")
         import traceback
         with st.expander("Error details"):
@@ -310,75 +306,63 @@ if st.button("⚙️ Process All Episodes Now", type="primary", use_container_wi
 
 # Advanced: Individual processing
 with st.expander("🔧 Advanced: Process Individual Episodes"):
-    st.markdown("### Transcribe Specific Episodes")
+    st.markdown("### Process Specific Episode")
     
-    if len(podcasts_needing_transcription) > 0:
-        selected_download = st.selectbox(
-            "Select episode to transcribe",
-            options=[(e['id'], f"{e['title'][:60]}...") for e in podcasts_needing_transcription],
+    if len(podcasts_needing_processing) > 0:
+        selected_episode = st.selectbox(
+            "Select episode to process",
+            options=[(p['podcast']['id'], f"{p['podcast']['title'][:60]}...") for p in podcasts_needing_processing],
             format_func=lambda x: x[1]
         )
         
-        if st.button("🎯 Transcribe Selected", key="transcribe_one"):
-            episode_id = selected_download[0]
-            episode_title = selected_download[1]
+        if st.button("🎯 Process Selected", key="process_one"):
+            episode_id = selected_episode[0]
+            episode_title = selected_episode[1]
             
             progress_bar = st.progress(0)
             status_text = st.empty()
+            debug_expander = st.expander("🔍 Debug Logs", expanded=True)
+            debug_container = debug_expander.container()
             
-            status_text.info(f"🎙️ Transcribing: {episode_title}...")
-            progress_bar.progress(0.3)
-            
-            success, error = transcribe_episode(episode_id, db)
-            
-            progress_bar.progress(1.0)
-            
-            if success:
-                status_text.success("✅ Transcription complete!")
-                st.success(f"✅ Successfully transcribed: {episode_title}")
-                st.rerun()
-            else:
-                status_text.error("❌ Transcription failed")
-                st.error(f"❌ Transcription failed: {error}")
+            with capture_output(container=debug_container, display=True, max_lines=200):
+                status_text.info(f"🎙️ Processing: {episode_title}...")
+                progress_bar.progress(0.3)
+                
+                # Transcribe
+                transcription_start = time.time()
+                print(f"🎙️ Transcribing episode: {episode_title}...")
+                success, error = transcribe_episode(episode_id, db)
+                transcription_time = time.time() - transcription_start
+                
+                progress_bar.progress(0.6)
+                
+                if success:
+                    print(f"✅ Transcribed episode in {transcription_time:.1f}s")
+                    # Summarize
+                    summarization_start = time.time()
+                    print(f"🧠 Summarizing episode: {episode_title}...")
+                    success_summary, error_summary, summary = summarize_episode(episode_id, db)
+                    summarization_time = time.time() - summarization_start
+                    
+                    progress_bar.progress(1.0)
+                    
+                    if success_summary:
+                        status_text.success(f"✅ Processing complete! ({transcription_time + summarization_time:.1f}s total)")
+                        st.success(f"✅ Successfully processed: {episode_title}")
+                        print(f"✅ Summarized episode in {summarization_time:.1f}s")
+                        if summary:
+                            with st.expander("View Summary"):
+                                st.json(summary)
+                        st.rerun()
+                    else:
+                        status_text.error("❌ Summarization failed")
+                        st.error(f"❌ Summarization failed: {error_summary}")
+                else:
+                    progress_bar.progress(1.0)
+                    status_text.error("❌ Processing failed")
+                    st.error(f"❌ Processing failed: {error}")
     else:
-        st.info("No episodes ready for transcription")
-    
-    st.markdown("---")
-    st.markdown("### Summarize Specific Episodes")
-    
-    if len(podcasts_needing_summarization) > 0:
-        selected_transcribed = st.selectbox(
-            "Select episode to summarize",
-            options=[(e['id'], f"{e['title'][:60]}...") for e in podcasts_needing_summarization],
-            format_func=lambda x: x[1]
-        )
-        
-        if st.button("🧠 Summarize Selected", key="summarize_one"):
-            episode_id = selected_transcribed[0]
-            episode_title = selected_transcribed[1]
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            status_text.info(f"🧠 Summarizing: {episode_title}...")
-            progress_bar.progress(0.3)
-            
-            success, error, summary = summarize_episode(episode_id, db)
-            
-            progress_bar.progress(1.0)
-            
-            if success:
-                status_text.success("✅ Summarization complete!")
-                st.success(f"✅ Successfully summarized: {episode_title}")
-                if summary:
-                    with st.expander("View Summary"):
-                        st.json(summary)
-                st.rerun()
-            else:
-                status_text.error("❌ Summarization failed")
-                st.error(f"❌ Summarization failed: {error}")
-    else:
-        st.info("No episodes ready for summarization")
+        st.info("No episodes ready for processing")
 
 # Sidebar
 with st.sidebar:
@@ -387,14 +371,10 @@ with st.sidebar:
     
     st.markdown("### 💡 Processing Info")
     st.markdown("""
-    **Transcription:**
-    - Uses Groq Whisper API
-    - ~1-2 min per hour of audio
-    - Converts speech to text
-    
-    **Summarization:**
-    - Uses Groq LLM API
-    - ~10-30 seconds per episode
+    **One-Step Processing:**
+    - Transcribes episodes (Groq Whisper API)
+    - Summarize episodes (Groq LLM API)
+    - ~2-3 min per episode total
     - Extracts topics, themes, quotes
     - Identifies companies mentioned
     """)
@@ -402,8 +382,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 📊 Current Status")
-    st.metric("Need Transcription", len(podcasts_needing_transcription))
-    st.metric("Need Summarization", len(podcasts_needing_summarization))
+    st.metric("Need Processing", len(podcasts_needing_processing))
     st.metric("Fully Processed", len(processed))
 
 # Cleanup
