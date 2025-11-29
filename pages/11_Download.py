@@ -6,10 +6,12 @@ Smart interface for finding and downloading podcast episodes
 import streamlit as st
 from pathlib import Path
 import feedparser
+import warnings
 
 from utils.postgres_db import PostgresDB
 from utils.search_langraph_util import search_podcast_rss_feed
 from utils.downloader import PodcastDownloader
+from utils.streamlit_logger import capture_output
 
 st.set_page_config(page_title="Download Episodes", page_icon="📥", layout="wide")
 
@@ -295,6 +297,9 @@ if selected_feeds:
     
     st.markdown("---")
     
+    # Debug window option
+    show_debug = st.checkbox("🔍 Show Debug Logs", value=False, help="Show detailed download and processing logs")
+    
     # Download button
     download_triggered = st.button("📥 Download Episodes Now", type="primary", use_container_width=True)
     
@@ -328,6 +333,13 @@ if selected_feeds:
             try:
                 status_text.info(f"🔄 Starting download of {total_feeds} feed(s)...")
                 
+                # Create debug log container
+                debug_container = None
+                if show_debug:
+                    debug_expander = st.expander("🔍 Debug Logs", expanded=True)
+                    debug_container = debug_expander.container()
+                    debug_container.info("📋 Capturing download and processing logs...")
+                
                 results = {
                     'total_downloaded': 0,
                     'feed_results': {}
@@ -335,35 +347,48 @@ if selected_feeds:
                 
                 feed_progress_container = st.container()
                 
-                for idx, feed_config in enumerate(selected_feed_configs):
-                    feed_name = feed_config['name']
-                    progress = idx / total_feeds
-                    overall_progress.progress(progress)
-                    status_text.info(f"📥 Processing feed {idx + 1}/{total_feeds}: {feed_name}...")
+                # Capture warnings (like Tavily deprecation)
+                with warnings.catch_warnings(record=True) as warning_list:
+                    warnings.simplefilter("always")
                     
-                    with feed_progress_container:
-                        with st.spinner(f"Downloading from {feed_name}..."):
-                            downloader = PodcastDownloader(
-                                db=db,
-                                data_dir="data",
-                                max_episodes=max_episodes
-                            )
+                    # Capture stdout/stderr for download logs
+                    with capture_output(container=debug_container, display=show_debug, max_lines=200, auto_update=False):
+                        for idx, feed_config in enumerate(selected_feed_configs):
+                            feed_name = feed_config['name']
+                            progress = idx / total_feeds
+                            overall_progress.progress(progress)
+                            status_text.info(f"📥 Processing feed {idx + 1}/{total_feeds}: {feed_name}...")
                             
-                            feed_id = downloader.add_feed(
-                                name=feed_config['name'],
-                                url=feed_config['url'],
-                                category=feed_config.get('category', 'general')
-                            )
+                            with feed_progress_container:
+                                with st.spinner(f"Downloading from {feed_name}..."):
+                                    downloader = PodcastDownloader(
+                                        db=db,
+                                        data_dir="data",
+                                        max_episodes=max_episodes
+                                    )
+                                    
+                                    feed_id = downloader.add_feed(
+                                        name=feed_config['name'],
+                                        url=feed_config['url'],
+                                        category=feed_config.get('category', 'general')
+                                    )
+                                    
+                                    count = downloader.process_feed(feed_config['url'])
                             
-                            count = downloader.process_feed(feed_config['url'])
-                    
-                    results['feed_results'][feed_name] = count
-                    results['total_downloaded'] += count
-                    
-                    if count > 0:
-                        st.success(f"✅ {feed_name}: Downloaded {count} new episode(s)")
-                    else:
-                        st.info(f"ℹ️ {feed_name}: No new episodes (may already exist)")
+                            results['feed_results'][feed_name] = count
+                            results['total_downloaded'] += count
+                            
+                            if count > 0:
+                                st.success(f"✅ {feed_name}: Downloaded {count} new episode(s)")
+                            else:
+                                st.info(f"ℹ️ {feed_name}: No new episodes (may already exist)")
+                
+                # Display warnings in debug window
+                if show_debug and warning_list:
+                    with debug_container:
+                        st.markdown("**⚠️ Warnings:**")
+                        for warning in warning_list:
+                            st.warning(str(warning.message))
                 
                 overall_progress.progress(1.0)
                 status_text.success(f"✅ Download complete!")
